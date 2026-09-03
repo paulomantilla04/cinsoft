@@ -2,7 +2,7 @@
 
 App de 3 pantallas para recibir registros a talleres del congreso, con panel administrativo protegido.
 
-**Stack:** Next.js (App Router) · Convex · Better Auth (`@convex-dev/better-auth`) · Tailwind · Motion
+**Stack:** Next.js 16 (App Router) · Convex · Better Auth (`@convex-dev/better-auth`) · Tailwind v4 · Motion
 
 **Rutas:**
 
@@ -10,6 +10,7 @@ App de 3 pantallas para recibir registros a talleres del congreso, con panel adm
 |---|---|---|
 | `/registro` | Público (ruta principal) | Formulario de inscripción |
 | `/dashboard` | Protegida | Tabla de registros + métricas |
+| `/estatus` | Público | Consulta de inscripción por cuenta o correo |
 | `/login` | Público | Acceso admin (sin signup) |
 
 > `/` hace `redirect('/registro')`.
@@ -25,6 +26,7 @@ Cada pantalla se construye **a partir del HTML ya diseñado**. No se empieza una
 | `/registro` | `form.html` | ✅ recibido |
 | `/dashboard` | `dashboard.html` | ✅ recibido |
 | `/login` | `login.html` | ✅ recibido |
+| `/estatus` | — (sin mock) | ✅ diseñada en el mismo lenguaje |
 
 Proceso por pantalla:
 
@@ -43,46 +45,52 @@ Reglas de fidelidad:
 
 ## 1. Setup base
 
-### 1.1 Proyecto
+### 1.1 Proyecto — ✅ HECHO
 
-```bash
-pnpm create next-app@latest cinsoft-talleres --ts --tailwind --app --eslint
-cd cinsoft-talleres
-pnpm add convex
-pnpm convex dev            # dejar corriendo
-pnpm add -E better-auth@1.5.3
-pnpm add @convex-dev/better-auth
-pnpm add motion
-```
+Versiones realmente instaladas:
 
-> El componente de Better Auth para Convex requiere Convex ≥ 1.25 y una versión pinneada de Better Auth. Verificar la versión exacta en la doc antes de instalar: <https://labs.convex.dev/better-auth/framework-guides/next>
+| Paquete | Versión | Nota |
+|---|---|---|
+| `next` | 16.3.4 | React 19.2.8 |
+| `convex` | 1.45.0 | cumple el `^1.25` que pide el componente |
+| `@convex-dev/better-auth` | 0.12.5 | |
+| `better-auth` | 1.6.30 | **el pin `1.5.3` del plan original era incorrecto**: el componente exige `>=1.6.11 <1.7.0` |
+| `tailwindcss` | 4.3.3 | vía `@tailwindcss/postcss` |
+| `motion` | 13.2.0 | |
+| `react-hook-form` / `zod` / `@hookform/resolvers` | 7.87.0 / 4.5.4 / 5.9.1 | |
 
-### 1.2 Tailwind — portar el design system del HTML
+Convex ya está vinculado (`CONVEX_DEPLOYMENT`, `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CONVEX_SITE_URL` en `.env.local`).
 
-Los 3 HTML comparten **el mismo bloque `tailwind.config`** (CDN). Ese bloque se copia tal cual a `tailwind.config.ts` (Tailwind v3) para que todas las clases del markup funcionen sin tocar nada:
+> Verificar siempre el rango de `better-auth` que declara el componente antes de actualizar: <https://labs.convex.dev/better-auth/framework-guides/next>
 
-- **Colores:** ~45 tokens Material-ish (`primary: #a6e358`, `background: #0a1420`, `secondary-container: #aa1400`, `surface-container-*`, `on-*`, `tertiary`, `outline`, …).
-- **borderRadius:** `DEFAULT/lg/xl = 0px`, `full = 9999px`.
-- **spacing:** `space-2xs … space-3xl`, `margin-mobile/desktop`, `gutter-mobile/desktop`.
-- **fontFamily:** `display-hero`/`headline-*` → Space Grotesk; `body-*`/`label-caps`/`code-badge` → JetBrains Mono.
-- **fontSize:** `display-hero (64px)`, `headline-lg/md/sm`, `body-lg/md/sm`, `label-caps`, `code-badge` (con su `lineHeight`, `letterSpacing` y `fontWeight`).
+### 1.2 Tailwind — ✅ HECHO (v4, no v3)
+
+Se optó por **Tailwind v4**: el bloque `tailwind.config` de los HTML está traducido a `@theme` en `app/globals.css`, no a un `tailwind.config.ts`. Bajar a v3 no compensaba con Next 16. Todas las clases del markup funcionan igual.
+
+Equivalencias usadas:
+
+| Config v3 | `@theme` v4 |
+|---|---|
+| `colors` | `--color-*` |
+| `borderRadius` | `--radius-*` (todo a `0px`; `rounded-full` es nativo en v4) |
+| `spacing` | `--spacing-*` |
+| `fontFamily` | `--font-*` |
+| `fontSize` | `--text-*` + `--text-*--line-height` / `--letter-spacing` / `--font-weight` |
 
 Además:
 
-- `darkMode: "class"` y `<html class="dark">` en el layout.
-- Fuentes con `next/font/google` (Space Grotesk 700, JetBrains Mono 400/700) en vez de `<link>`.
-- Material Symbols Outlined: `<link>` en el layout (los HTML usan `<span class="material-symbols-outlined">` en varios lugares).
-- CSS global: `.bg-dot-matrix` (radial-gradient `#1E354D`, 24px), `::-webkit-scrollbar { display: none }`, `overscroll-behavior: none`.
+- Fuentes con `next/font/google` (Space Grotesk 700, JetBrains Mono 400/700).
+- **Material Symbols self-hosteada** con `next/font/local` (`app/fonts/material-symbols-outlined.woff2`). No se usa el `<link>` a Google: ese CSS va **sin `@layer`** y en Tailwind v4 lo no-capado gana sobre las utilities, así que su `font-size: 24px` pisaba los `text-[18px]` de los iconos. La clase `.material-symbols-outlined` se define a mano dentro de `@layer base`.
+- `darkMode: "class"` resultó innecesario: el markup no usa ni una variante `dark:`, los colores son fijos. Se conserva `<html class="dark">` por fidelidad y se añade `color-scheme: dark` para que `<select>`/`<option>` nativos se pinten oscuros.
+- CSS global: `.bg-dot-matrix`, `::-webkit-scrollbar { display: none }`, `overscroll-behavior: none` y un bloque `prefers-reduced-motion`.
 
-> Si se usa Tailwind v4, el config se traduce a `@theme` en el CSS. Recomendación: **v3** para copiar el bloque tal cual y no perder tiempo.
+### 1.3 Layout compartido — ✅ HECHO
 
-### 1.3 Layout compartido
-
-Header fijo (`h-20`, `border-b-4 border-primary`, logo CINSOFT) y footer son idénticos en las 3 páginas → componentes `<SiteHeader />` y `<SiteFooter />` en `app/layout.tsx`. Ojo: en `/dashboard` el header muestra el usuario autenticado; en `/registro` y `/login` se queda genérico.
+Header fijo (`h-20`, `border-b-4 border-primary`, logo CINSOFT) y footer son idénticos en las 3 páginas → `components/site-header.tsx` y `components/site-footer.tsx`, montados en `app/layout.tsx`. El header en sí es igual en las 3 (el usuario autenticado va en la barra de telemetría del dashboard, no en el header); solo cambia el badge `v26.0 // CONGRESS` vs `CONGRESO`, expuesto como prop.
 
 ---
 
-## 2. Modelo de datos (Convex)
+## 2. Modelo de datos (Convex) — ✅ HECHO
 
 ```ts
 // convex/schema.ts
@@ -122,12 +130,12 @@ Notas:
 
 ## 3. Backend Convex
 
-### 3.1 `convex/workshops.ts`
+### 3.1 `convex/workshops.ts` — ✅ HECHO
 
 - `list` (query, pública): talleres activos con `name`, `keyword`, `slug`, `capacity`, `enrolled`, `remaining = capacity - enrolled`, `isFull`. Alimenta el `<select>` del formulario, que debe imprimir `NOMBRE (N cupos disp.)` y marcar `disabled` los llenos.
 - `stats` (query, protegida): totales para las 4 tarjetas del dashboard — total registrados, talleres activos y cuántos con cupo abierto, taller más solicitado (+ % de ocupación), cupos disponibles globales y % restante.
 
-### 3.2 `convex/registrations.ts`
+### 3.2 `convex/registrations.ts` — ✅ HECHO
 
 **`create` (mutation pública)** — el corazón de la app. En orden:
 
@@ -148,11 +156,13 @@ Errores: lanzar `ConvexError({ code, message })` para poder pintar el banner cor
 
 **`listAll` (query protegida)** — todos los registros con su taller resuelto (`keyword`, `slug`, `accent`), ordenados por `_creationTime` desc. Con el volumen esperado (cientos de filas) se traen completos y se filtra/pagina en cliente; así los tabs, el buscador y los contadores funcionan sin round-trips. Si crece mucho, migrar a `paginate()` con índice.
 
+**`move` (mutation protegida)** — ✅ el botón `[MOVER]` de la tabla: reasigna a un alumno a otro taller. La lógica vive en `convex/lib/registrations.ts` (`applyMove`). Baja el contador del taller origen, sube el del destino y repunta el registro **dentro de la misma mutation**, así que o pasan los tres o no pasa ninguno; sin eso, dos reasignaciones simultáneas dejarían los contadores desalineados con las filas reales. Valida el cupo del destino igual que un alta, y mover a alguien al taller en el que ya está es un no-op (evita que un doble click descuadre los contadores). Sella `reassignedAt` para que `/estatus` pueda avisarle al alumno.
+
 **`remove` (mutation protegida)** — el botón `[BORRAR]` de la tabla: borra el registro y decrementa `enrolled`.
 
 **`exportCsv`** — se genera en el cliente desde los datos ya cargados (Blob + `URL.createObjectURL`). El HTML ya tiene el botón y su animación de "GENERANDO STREAM… / DESCARGA LISTA [OK]"; se conserva y solo se le cuelga la descarga real.
 
-### 3.3 Guard de autorización
+### 3.3 Guard de autorización — ✅ HECHO (`convex/lib/auth.ts`)
 
 Helper `requireAdmin(ctx)` que revisa `ctx.auth.getUserIdentity()` (o el helper del componente de Better Auth) y lanza si no hay sesión. Se aplica en `stats`, `listAll`, `remove` y `workshops.stats`. **La protección de rutas en Next no basta: las queries de Convex son accesibles desde fuera.**
 
@@ -180,15 +190,22 @@ pnpm convex run seed:createAdmin '{"email":"admin@uaeh.edu.mx","password":"...",
 
 Al ser `internalAction`, no es invocable desde el cliente. Con `disableSignUp: true` hay que crear el usuario por la vía interna del componente (no por el endpoint público de signup); confirmar el método exacto en la doc del componente al implementarlo.
 
-Mismo patrón para sembrar los talleres:
+Mismo patrón para sembrar los talleres (ya implementado, idempotente: actualiza
+por `slug` y nunca toca `enrolled`, así que se puede re-correr sin perder cupos):
 
 ```bash
 pnpm convex run seed:seedWorkshops
 ```
 
+Y para limpiar registros durante el desarrollo:
+
+```bash
+pnpm convex run seed:resetRegistrations
+```
+
 ### 4.3 Protección de `/dashboard`
 
-- `middleware.ts`: si no hay sesión → redirect a `/login`; si hay sesión y visita `/login` → redirect a `/dashboard`.
+- **`proxy.ts`** (⚠ en Next 16 el `middleware.ts` se renombró a `proxy.ts`, misma funcionalidad, en la raíz del proyecto): si no hay sesión → redirect a `/login`; si hay sesión y visita `/login` → redirect a `/dashboard`.
 - Además, `requireAdmin` en el backend (punto 3.3).
 - Botón de logout en el header del dashboard (el HTML tiene el bloque `AUTH_USER: SUPERADMIN_ROOT` en la barra de telemetría → ahí va el email real y el botón).
 
@@ -204,6 +221,7 @@ Campos (en el orden del HTML): **1. Número de cuenta** · **2. Correo** · **3.
 - El badge `#quotaBadge` es dinámico: al elegir taller muestra `[ESTADO: DISPONIBLE]`, `[ESTADO: ÚLTIMOS LUGARES]` (≤ 20% del cupo, color `secondary-container`) o `[ESTADO: CUPO LLENO]`.
 - Validación en cliente con `react-hook-form` + Zod (mismo esquema que el server), mensajes en línea bajo cada campo con el estilo de error del HTML.
 - El input de cuenta debe forzar solo dígitos y `maxLength = 6` (el HTML trae `maxlength="10"`, se corrige a 6).
+- El esquema Zod compartido vive en `lib/validation.ts` y lo importan tanto el form como la mutation de Convex; el catálogo de grupos y accents, en `lib/catalog.ts`.
 - Submit: botón pasa a `PROCESANDO MATRÍCULA...` con el spinner `sync animate-spin`; al terminar, `REGISTRO COMPLETADO` y se revela `#statusNotification` con nombre, cuenta, taller y correo.
 - Errores del server (duplicado / cupo lleno) → variante roja del mismo banner: `⚠ REGISTRO RECHAZADO // CUENTA YA INSCRITA` etc.
 - La copia dice "Comprobante enviado a la bandeja de entrada" → o se implementa correo (Resend en una action) o se ajusta el texto. **Decisión pendiente.**
@@ -224,13 +242,32 @@ Secciones, de arriba hacia abajo:
 2. **Header del panel** — título, métrica global (`REGISTROS: N` + `[X% OCUPADO]`) y estado de matrícula.
 3. **4 tarjetas de métricas** — Total registrados (+N en la última hora, calculado con `_creationTime`), Talleres activos (`N de M con cupo abierto`), Más solicitado (keyword + alumnos + % de capacidad; borde `secondary` cuando está crítico), Cupos disponibles (+ % global restante).
 4. **Tabs de filtro + buscador** — un tab por taller con su conteo real (`TODOS (148)`, `IA (38)`, …), estado activo `bg-secondary`. Buscador filtra por cuenta o nombre en vivo, `ESC` limpia.
-5. **Tabla** — barra de ventana tipo terminal + columnas `# · NÚMERO DE CUENTA · NOMBRE · CORREO · TALLER · GRUPO · ACCIONES`. Filas alternan `surface-container-low` / `surface-container-lowest`. El badge del taller usa `keyword` y el color de `accent`. Acciones `[VER]` (modal con la ficha completa) y `[BORRAR]` (confirmación antes de la mutation).
+5. **Tabla** — barra de ventana tipo terminal + columnas `# · NÚMERO DE CUENTA · NOMBRE · CORREO · TALLER · GRUPO · ACCIONES`. Filas alternan `surface-container-low` / `surface-container-lowest`. El badge del taller usa `keyword` y el color de `accent`. Acciones `[VER]` (modal con la ficha completa), `[MOVER]` (selector de taller destino → `registrations.move`, que ya existe) y `[BORRAR]` (confirmación antes de la mutation).
 6. **Paginación + export** — 7 registros por página como en el HTML, texto `MOSTRANDO 1-7 DE N // PÁGINA 1 DE M`, y `EXPORTAR CSV` real (respetando el filtro/búsqueda activos).
 7. **Estado vacío** — no viene en el HTML; hay que diseñarlo en el mismo lenguaje (`NO_RECORDS_FOUND // BUFFER VACÍO`).
 
 Todo es reactivo: al llegar un registro nuevo desde `/registro`, `useQuery` actualiza tabla y métricas solo.
 
 ---
+
+### 5.4 `/estatus` — sin mock — ✅ HECHO
+
+Ruta pública para que un alumno consulte en qué taller quedó, escribiendo su
+número de cuenta **o** su correo institucional. Existe sobre todo para el caso
+en que el admin reasigna a alguien de taller: la card lee en vivo de Convex, así
+que siempre refleja el estado actual sin que nadie tenga que avisar.
+
+- Query `registrations.lookup` (pública). El término inválido se detecta en el
+  cliente y ni siquiera sale a la red.
+- Tres estados: `found` (card con taller, keyword con su accent, grupo, cuenta y
+  fecha), `not_found` (banner rojo `NO_RECORD_FOUND // BUFFER VACÍO`) e
+  `invalid` (aviso en línea bajo el input).
+- **Nombre y correo van enmascarados** (`ALEJANDRO M. S.`, `mo****21@uaeh.edu.mx`):
+  el número de cuenta son 6 dígitos y por tanto es enumerable, así que la
+  respuesta debe alcanzar para que el alumno se reconozca pero no para cosechar
+  datos ajenos. Ver decisión pendiente §8.7.
+- Enlazada desde `/registro` y con enlace de vuelta al registro.
+- Si el alumno fue reasignado, la card muestra un aviso `REASIGNADO POR COORDINACIÓN` con la fecha del cambio, para que entienda por qué su taller es otro.
 
 ## 6. Motion
 
@@ -249,12 +286,12 @@ Discreto y consistente con el brutalismo (movimientos cortos y secos, nada de ea
 
 | Fase | Contenido | Bloqueado por |
 |---|---|---|
-| **F0** | Proyecto, Tailwind con el theme portado, fuentes, layout con header/footer | — |
-| **F1** | Schema Convex + seed de talleres + queries/mutations de registro | — |
+| **F0** ✅ | Proyecto, Tailwind con el theme portado, fuentes, layout con header/footer | — |
+| **F1** ✅ | Schema Convex + seed de talleres + queries/mutations de registro | — |
 | **F2** | `/registro` completo (UI + validación + mutation + estados de error) | `form.html` ✅ |
 | **F3** | Better Auth + seed de admin por CLI + `/login` + middleware | `login.html` ✅ |
 | **F4** | `/dashboard`: tabla, tabs, buscador, paginación | `dashboard.html` ✅ |
-| **F5** | Métricas, `[VER]`, `[BORRAR]`, export CSV | F4 |
+| **F5** | Métricas, `[VER]`, `[MOVER]` (UI; la mutation ya existe), `[BORRAR]`, export CSV | F4 |
 | **F6** | Motion, estados vacíos/carga, responsive, deploy | F2–F5 |
 
 Deploy: Vercel + `pnpm convex deploy`. Variables: `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CONVEX_SITE_URL`, `BETTER_AUTH_SECRET`, `SITE_URL`.
@@ -264,8 +301,9 @@ Deploy: Vercel + `pnpm convex deploy`. Variables: `NEXT_PUBLIC_CONVEX_URL`, `NEX
 ## 8. Decisiones pendientes
 
 1. **Correo de confirmación** — ¿se implementa (Resend + action de Convex) o se ajusta el texto del banner? El HTML promete comprobante por correo.
-2. **Catálogo real de talleres** — nombre, keyword y cupo exacto de cada uno. El HTML trae 5 de ejemplo (Python 35, Ciberseguridad 12, Web 8, IA 2, BD 24) pero mencionaste cupos de 15/20/25.
-3. **Grupos** — ¿el catálogo fijo del HTML (101, 102, 301, 302, 501, 502, 701, 702) es el definitivo? En la tabla del dashboard aparecen como `G-401`, `G-601`, `G-801`, que no coinciden con ese catálogo. Hay que unificar.
+2. **Catálogo real de talleres** — ⏳ pendiente. Mientras tanto se siembra un **catálogo ficticio** (los 5 del HTML) desde `convex/seed.ts`; sustituirlo es un solo `pnpm convex run` cuando lleguen los datos reales.
+3. ~~**Grupos**~~ — ✅ resuelto. Catálogo definitivo: `101, 102, 301, 302, 501, 502, 701, 702`. Los `G-401` / `G-601` / `G-801` del dashboard eran datos de mock y se descartan.
 4. **Cierre de registros** — ¿un switch global para cerrar la convocatoria en cierta fecha?
-5. **Edición de registros** — hoy solo hay `[VER]` y `[BORRAR]`. ¿Se necesita mover a un alumno de taller?
-6. **Rate limiting** — la mutation de registro es pública. Con el filtro de dominio `@uaeh.edu.mx` + unicidad por cuenta el riesgo es bajo, pero conviene un límite por IP si se expone abierto.
+5. ~~**Edición de registros**~~ — ✅ resuelto en backend: `registrations.move` ya reasigna de taller de forma transaccional y sella `reassignedAt`. Falta sólo el botón `[MOVER]` en la tabla del dashboard (F5) y decidir si el admin debe poder **forzar** un movimiento a un taller lleno; hoy se rechaza con `WORKSHOP_FULL`.
+6. **Rate limiting** — la mutation de registro es pública. Con el filtro de dominio `@uaeh.edu.mx` + unicidad por cuenta el riesgo es bajo, pero conviene un límite por IP si se expone abierto. Aplica igual a `registrations.lookup`, que es enumerable por número de cuenta.
+7. **Nivel de enmascarado en `/estatus`** — hoy la card muestra nombre e email parcialmente ocultos. Alternativas: (a) mostrarlos completos, más cómodo pero deja cosechar datos por fuerza bruta sobre 6 dígitos; (b) exigir cuenta **y** correo juntos, lo más estricto, pero obliga al alumno a recordar ambos. Se eligió el punto medio; cambiarlo es una línea.
