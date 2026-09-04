@@ -3,6 +3,20 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
+/** Acento del chevron y del panel, para que combine con el contenedor. */
+const ACCENTS = {
+  primary: {
+    chevron: "bg-primary text-on-primary",
+    panel: "border-primary",
+    active: "bg-primary text-on-primary",
+  },
+  tertiary: {
+    chevron: "bg-tertiary text-on-tertiary",
+    panel: "border-tertiary",
+    active: "bg-tertiary text-on-tertiary",
+  },
+} as const;
+
 export type SelectOption = {
   value: string;
   label: string;
@@ -19,6 +33,7 @@ export type SelectOption = {
  * el foco por la lista.
  */
 export function BrutalistSelect({
+  accent = "primary",
   disabled = false,
   hasError = false,
   id,
@@ -29,6 +44,7 @@ export function BrutalistSelect({
   placeholder,
   value,
 }: {
+  accent?: keyof typeof ACCENTS;
   disabled?: boolean;
   hasError?: boolean;
   id: string;
@@ -39,6 +55,7 @@ export function BrutalistSelect({
   placeholder: string;
   value: string;
 }) {
+  const tone = ACCENTS[accent];
   const listId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
@@ -201,7 +218,9 @@ export function BrutalistSelect({
       </button>
 
       {/* El chevron con fondo primary del diseño; gira al abrir. */}
-      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 bg-primary text-on-primary border-l-[3px] border-surface">
+      <div
+        className={`pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 border-l-[3px] border-surface ${tone.chevron}`}
+      >
         <span
           className={`material-symbols-outlined text-[20px] font-bold transition-transform duration-150 ${
             open ? "rotate-180" : ""
@@ -215,7 +234,7 @@ export function BrutalistSelect({
         {open ? (
           <motion.ul
             animate={{ opacity: 1, y: 0 }}
-            className="absolute z-30 top-full left-0 w-full mt-1 max-h-64 overflow-y-auto bg-surface-container-low border-[3px] border-primary shadow-[6px_6px_0px_#000000]"
+            className={`absolute z-30 top-full left-0 w-full mt-1 max-h-64 overflow-y-auto bg-surface-container-low border-[3px] shadow-[6px_6px_0px_#000000] ${tone.panel}`}
             exit={reduced ? undefined : { opacity: 0, y: -4 }}
             id={listId}
             initial={reduced ? false : { opacity: 0, y: -4 }}
@@ -234,7 +253,7 @@ export function BrutalistSelect({
                     option.disabled === true
                       ? "text-outline cursor-not-allowed"
                       : isActive
-                        ? "bg-primary text-on-primary cursor-pointer"
+                        ? `${tone.active} cursor-pointer`
                         : "text-on-surface cursor-pointer"
                   }`}
                   data-index={index}

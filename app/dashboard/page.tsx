@@ -10,6 +10,8 @@ import {
 import { useRouter } from "next/navigation";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
+import { BrutalistSelect } from "@/components/brutalist-select";
+import { Modal, ModalHeader } from "@/components/modal";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { authClient } from "@/lib/auth-client";
@@ -58,6 +60,7 @@ export default function DashboardPage() {
   };
   const [detail, setDetail] = useState<Row | null>(null);
   const [moveRow, setMoveRow] = useState<Row | null>(null);
+  const [deleteRow, setDeleteRow] = useState<Row | null>(null);
   const [exportState, setExportState] = useState<"idle" | "working" | "done">(
     "idle",
   );
@@ -105,12 +108,18 @@ export default function DashboardPage() {
   };
 
   const onDelete = async (row: Row) => {
-    const ok = window.confirm(
-      `¿Borrar el registro de ${row.fullName} (${row.accountNumber})? Su lugar volverá al taller.`,
-    );
-    if (!ok) return;
     await removeRegistration({ registrationId: row._id });
+    setDeleteRow(null);
+  };
+
+  // Los diálogos no se apilan: abrir uno desde la ficha la cierra.
+  const openMove = (row: Row) => {
     setDetail(null);
+    setMoveRow(row);
+  };
+  const openDelete = (row: Row) => {
+    setDetail(null);
+    setDeleteRow(row);
   };
 
   const onMove = async (row: Row, workshopId: Id<"workshops">) => {
@@ -444,7 +453,7 @@ export default function DashboardPage() {
                           </button>
                           <button
                             className="px-2.5 py-1.5 bg-secondary-container/30 hover:bg-secondary-container hover:text-on-secondary-container text-secondary font-label-caps text-code-badge border-2 border-secondary shadow-[2px_2px_0px_#000] active:translate-x-0.5 active:translate-y-0.5 transition-all"
-                            onClick={() => onDelete(row)}
+                            onClick={() => openDelete(row)}
                             title="Eliminar Registro"
                             type="button"
                           >
@@ -563,23 +572,36 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {moveRow === null ? null : (
-        <MoveModal
-          onClose={() => setMoveRow(null)}
-          onConfirm={(workshopId) => onMove(moveRow, workshopId)}
-          row={moveRow}
-          workshops={workshops ?? []}
-        />
-      )}
+      <AnimatePresence>
+        {moveRow === null ? null : (
+          <MoveModal
+            key="move"
+            onClose={() => setMoveRow(null)}
+            onConfirm={(workshopId) => onMove(moveRow, workshopId)}
+            row={moveRow}
+            workshops={workshops ?? []}
+          />
+        )}
 
-      {detail === null ? null : (
-        <DetailModal
-          onClose={() => setDetail(null)}
-          onDelete={() => onDelete(detail)}
-          onMove={() => setMoveRow(detail)}
-          row={detail}
-        />
-      )}
+        {detail === null ? null : (
+          <DetailModal
+            key="detail"
+            onClose={() => setDetail(null)}
+            onDelete={() => openDelete(detail)}
+            onMove={() => openMove(detail)}
+            row={detail}
+          />
+        )}
+
+        {deleteRow === null ? null : (
+          <DeleteModal
+            key="delete"
+            onClose={() => setDeleteRow(null)}
+            onConfirm={() => onDelete(deleteRow)}
+            row={deleteRow}
+          />
+        )}
+      </AnimatePresence>
     </main>
   );
 }
@@ -764,72 +786,128 @@ function DetailModal({
   onMove: () => void;
   row: Row;
 }) {
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  return (
+    <Modal labelledBy="detail-title" onClose={onClose}>
+      <ModalHeader
+        id="detail-title"
+        onClose={onClose}
+        title={`RECORD://${row.accountNumber}`}
+      />
+
+      <dl className="p-space-lg grid grid-cols-1 sm:grid-cols-2 gap-space-md">
+        <ModalField label="NÚMERO DE CUENTA" value={row.accountNumber} />
+        <ModalField label="GRUPO" value={`G-${row.group}`} />
+        <ModalField label="NOMBRE" value={row.fullName.toUpperCase()} />
+        <ModalField label="CORREO" value={row.email} />
+        <ModalField label="TALLER" value={row.workshop.keyword} />
+        <ModalField
+          label="REGISTRADO"
+          value={formatTimestamp(row._creationTime)}
+        />
+        {row.reassignedAt === undefined ? null : (
+          <ModalField
+            label="REASIGNADO"
+            value={formatTimestamp(row.reassignedAt)}
+          />
+        )}
+      </dl>
+
+      <div className="px-space-lg pb-space-lg flex justify-end gap-2">
+        <button
+          className="px-3 py-2 bg-surface-container-high hover:bg-tertiary hover:text-on-tertiary text-tertiary font-label-caps text-code-badge border-2 border-tertiary shadow-[2px_2px_0px_#000]"
+          onClick={onMove}
+          type="button"
+        >
+          [MOVER DE TALLER]
+        </button>
+        <button
+          className="px-3 py-2 bg-secondary-container/30 hover:bg-secondary-container hover:text-on-secondary-container text-secondary font-label-caps text-code-badge border-2 border-secondary shadow-[2px_2px_0px_#000]"
+          onClick={onDelete}
+          type="button"
+        >
+          [BORRAR REGISTRO]
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/** Confirmación de borrado. Sustituye al `window.confirm` del navegador. */
+function DeleteModal({
+  onClose,
+  onConfirm,
+  row,
+}: {
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+  row: Row;
+}) {
+  const [isDeleting, setIsDeleting] = useState(false);
 
   return (
-    <div
-      className="fixed inset-0 z-[60] bg-black/70 flex items-center justify-center p-margin-mobile"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-[560px] bg-surface-container-low border-4 border-primary shadow-[8px_8px_0px_#000000]"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="bg-surface-container-high border-b-4 border-primary px-space-md py-space-xs flex flex-wrap items-center justify-between gap-x-space-sm gap-y-space-2xs">
-          <span className="font-code-badge text-code-badge text-on-surface-variant font-bold uppercase">
-            RECORD://{row.accountNumber}
+    <Modal accent="secondary" labelledBy="delete-title" onClose={onClose}>
+      <ModalHeader
+        accent="secondary"
+        id="delete-title"
+        onClose={onClose}
+        title={`DELETE://${row.accountNumber}`}
+      />
+
+      <div className="p-space-lg flex flex-col gap-space-md">
+        <div className="flex items-start gap-3">
+          <span className="material-symbols-outlined text-secondary text-[28px]">
+            warning
           </span>
+          <div className="flex flex-col">
+            <span className="font-label-caps text-label-caps text-secondary tracking-wider uppercase">
+              ⚠ ESTA ACCIÓN NO SE PUEDE DESHACER
+            </span>
+            <p className="font-body-sm text-body-sm text-on-surface mt-0.5">
+              Se borrará el registro de{" "}
+              <strong>{row.fullName.toUpperCase()}</strong> (
+              {row.accountNumber}) y su lugar volverá al taller{" "}
+              {row.workshop.keyword}.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row justify-end gap-2">
           <button
-            className="font-code-badge text-code-badge text-secondary border border-secondary px-2 py-0.5 hover:bg-secondary-container hover:text-on-secondary-container"
+            className="px-space-lg py-3 bg-surface-container-high text-on-surface font-label-caps text-label-caps border-2 border-outline hover:border-primary shadow-[2px_2px_0px_#000]"
+            disabled={isDeleting}
             onClick={onClose}
             type="button"
           >
-            [ESC]
-          </button>
-        </div>
-
-        <dl className="p-space-lg grid grid-cols-1 sm:grid-cols-2 gap-space-md">
-          <ModalField label="NÚMERO DE CUENTA" value={row.accountNumber} />
-          <ModalField label="GRUPO" value={`G-${row.group}`} />
-          <ModalField label="NOMBRE" value={row.fullName.toUpperCase()} />
-          <ModalField label="CORREO" value={row.email} />
-          <ModalField label="TALLER" value={row.workshop.keyword} />
-          <ModalField
-            label="REGISTRADO"
-            value={formatTimestamp(row._creationTime)}
-          />
-          {row.reassignedAt === undefined ? null : (
-            <ModalField
-              label="REASIGNADO"
-              value={formatTimestamp(row.reassignedAt)}
-            />
-          )}
-        </dl>
-
-        <div className="px-space-lg pb-space-lg flex justify-end gap-2">
-          <button
-            className="px-3 py-2 bg-surface-container-high hover:bg-tertiary hover:text-on-tertiary text-tertiary font-label-caps text-code-badge border-2 border-tertiary shadow-[2px_2px_0px_#000]"
-            onClick={onMove}
-            type="button"
-          >
-            [MOVER DE TALLER]
+            [CANCELAR]
           </button>
           <button
-            className="px-3 py-2 bg-secondary-container/30 hover:bg-secondary-container hover:text-on-secondary-container text-secondary font-label-caps text-code-badge border-2 border-secondary shadow-[2px_2px_0px_#000]"
-            onClick={onDelete}
+            className="px-space-lg py-3 bg-secondary-container text-on-secondary-container font-label-caps text-label-caps border-[3px] border-black shadow-[4px_4px_0px_#000000] hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0px_#000000] active:translate-x-1 active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={isDeleting}
+            onClick={async () => {
+              setIsDeleting(true);
+              await onConfirm();
+            }}
             type="button"
           >
-            [BORRAR REGISTRO]
+            {isDeleting ? (
+              <>
+                <span className="material-symbols-outlined animate-spin text-[18px]">
+                  sync
+                </span>
+                <span>BORRANDO...</span>
+              </>
+            ) : (
+              <>
+                <span>SÍ, BORRAR REGISTRO</span>
+                <span className="material-symbols-outlined text-[18px]">
+                  delete
+                </span>
+              </>
+            )}
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -875,17 +953,15 @@ function MoveModal({
   const [error, setError] = useState<string | null>(null);
 
   // No tiene sentido ofrecer el taller en el que ya está.
-  const options = workshops.filter(
-    (workshop) => workshop.keyword !== row.workshop.keyword,
-  );
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  const options = workshops
+    .filter((workshop) => workshop.keyword !== row.workshop.keyword)
+    .map((workshop) => ({
+      disabled: workshop.isFull,
+      label: workshop.isFull
+        ? `${workshop.name} (CUPO LLENO)`
+        : `${workshop.name} (${workshop.remaining} cupos disp.)`,
+      value: workshop._id,
+    }));
 
   const submit = async () => {
     if (target === "") return;
@@ -901,115 +977,82 @@ function MoveModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[60] bg-black/70 flex items-center justify-center p-margin-mobile"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-[520px] bg-surface-container-low border-4 border-tertiary shadow-[8px_8px_0px_#000000]"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="bg-surface-container-high border-b-4 border-tertiary px-space-md py-space-xs flex items-center justify-between">
-          <span className="font-code-badge text-code-badge text-on-surface-variant font-bold uppercase">
-            REASSIGN://{row.accountNumber}
+    <Modal accent="tertiary" labelledBy="move-title" onClose={onClose}>
+      <ModalHeader
+        accent="tertiary"
+        id="move-title"
+        onClose={onClose}
+        title={`REASSIGN://${row.accountNumber}`}
+      />
+
+      <div className="p-space-lg flex flex-col gap-space-md">
+        <div className="flex flex-col gap-space-2xs">
+          <span className="font-code-badge text-code-badge text-on-surface-variant uppercase">
+            ALUMNO
           </span>
-          <button
-            className="font-code-badge text-code-badge text-secondary border border-secondary px-2 py-0.5 hover:bg-secondary-container hover:text-on-secondary-container"
-            onClick={onClose}
-            type="button"
-          >
-            [ESC]
-          </button>
+          <span className="font-body-md text-body-md text-on-surface font-bold uppercase">
+            {row.fullName} ({row.accountNumber})
+          </span>
+          <span className="font-code-badge text-code-badge text-on-surface-variant mt-space-2xs">
+            TALLER ACTUAL: {row.workshop.keyword}
+          </span>
         </div>
 
-        <div className="p-space-lg flex flex-col gap-space-md">
-          <div className="flex flex-col gap-space-2xs">
-            <span className="font-code-badge text-code-badge text-on-surface-variant uppercase">
-              ALUMNO
+        <div className="flex flex-col gap-space-2xs">
+          <label
+            className="font-label-caps text-label-caps text-on-surface uppercase tracking-wider"
+            htmlFor="move-target"
+            id="move-target-label"
+          >
+            TALLER DESTINO
+          </label>
+          <BrutalistSelect
+            accent="tertiary"
+            disabled={isMoving}
+            id="move-target"
+            labelledBy="move-target-label"
+            onChange={setTarget}
+            options={options}
+            placeholder="> SELECCIONAR TALLER DESTINO..."
+            value={target}
+          />
+        </div>
+
+        {error === null ? null : (
+          <div className="flex items-start gap-2 border-2 border-secondary bg-surface-container-high p-space-sm">
+            <span className="material-symbols-outlined text-secondary text-[18px]">
+              warning
             </span>
-            <span className="font-body-md text-body-md text-on-surface font-bold uppercase">
-              {row.fullName} ({row.accountNumber})
-            </span>
-            <span className="font-code-badge text-code-badge text-on-surface-variant mt-space-2xs">
-              TALLER ACTUAL: {row.workshop.keyword}
+            <span className="font-body-sm text-body-sm text-on-surface">
+              {error}
             </span>
           </div>
+        )}
 
-          <div className="flex flex-col gap-space-2xs">
-            <label
-              className="font-label-caps text-label-caps text-on-surface uppercase tracking-wider"
-              htmlFor="move-target"
-            >
-              TALLER DESTINO
-            </label>
-            <div className="relative">
-              <select
-                className="w-full bg-surface text-on-surface font-body-md border-[3px] border-on-surface-variant/40 px-4 py-3 appearance-none focus:border-tertiary focus:outline-none cursor-pointer transition-none shadow-[3px_3px_0px_#000000]"
-                disabled={isMoving}
-                id="move-target"
-                onChange={(event) => setTarget(event.target.value)}
-                value={target}
-              >
-                <option className="bg-surface text-outline" disabled value="">
-                  &gt; SELECCIONAR TALLER DESTINO...
-                </option>
-                {options.map((workshop) => (
-                  <option
-                    className="bg-surface-container-low text-on-surface py-2"
-                    disabled={workshop.isFull}
-                    key={workshop._id}
-                    value={workshop._id}
-                  >
-                    {workshop.isFull
-                      ? `${workshop.name} (CUPO LLENO)`
-                      : `${workshop.name} (${workshop.remaining} cupos disp.)`}
-                  </option>
-                ))}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 bg-tertiary text-on-tertiary border-l-[3px] border-surface">
-                <span className="material-symbols-outlined text-[20px] font-bold">
-                  expand_more
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {error === null ? null : (
-            <div className="flex items-start gap-2 border-2 border-secondary bg-surface-container-high p-space-sm">
-              <span className="material-symbols-outlined text-secondary text-[18px]">
-                warning
+        <button
+          className="w-full bg-tertiary text-on-tertiary font-label-caps text-label-caps py-3 border-[3px] border-black shadow-[4px_4px_0px_#000000] hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0px_#000000] active:translate-x-1 active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+          disabled={target === "" || isMoving}
+          onClick={submit}
+          type="button"
+        >
+          {isMoving ? (
+            <>
+              <span className="material-symbols-outlined animate-spin text-[18px]">
+                sync
               </span>
-              <span className="font-body-sm text-body-sm text-on-surface">
-                {error}
+              <span>REASIGNANDO...</span>
+            </>
+          ) : (
+            <>
+              <span>CONFIRMAR REASIGNACIÓN</span>
+              <span className="material-symbols-outlined text-[18px]">
+                swap_horiz
               </span>
-            </div>
+            </>
           )}
-
-          <button
-            className="w-full bg-tertiary text-on-tertiary font-label-caps text-label-caps py-3 border-[3px] border-black shadow-[4px_4px_0px_#000000] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_#000000] active:translate-x-[4px] active:translate-y-[4px] active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
-            disabled={target === "" || isMoving}
-            onClick={submit}
-            type="button"
-          >
-            {isMoving ? (
-              <>
-                <span className="material-symbols-outlined animate-spin text-[18px]">
-                  sync
-                </span>
-                <span>REASIGNANDO...</span>
-              </>
-            ) : (
-              <>
-                <span>CONFIRMAR REASIGNACIÓN</span>
-                <span className="material-symbols-outlined text-[18px]">
-                  swap_horiz
-                </span>
-              </>
-            )}
-          </button>
-        </div>
+        </button>
       </div>
-    </div>
+    </Modal>
   );
 }
 
