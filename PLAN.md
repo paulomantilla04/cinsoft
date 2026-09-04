@@ -243,7 +243,7 @@ Campos (en el orden del HTML): **1. Número de cuenta** · **2. Correo** · **3.
 - El banner `#auth-error-banner` arranca oculto y aparece solo si Better Auth devuelve error. Mensaje genérico, sin distinguir "usuario no existe" de "contraseña incorrecta".
 - Botón → `ACCEDIENDO AL SISTEMA...` y luego `router.push('/dashboard')`.
 
-### 5.3 `/dashboard` — base `dashboard.html` — ✅ HECHO (falta export CSV y `[MOVER]`)
+### 5.3 `/dashboard` — base `dashboard.html` — ✅ HECHO
 
 Secciones, de arriba hacia abajo:
 
@@ -252,7 +252,7 @@ Secciones, de arriba hacia abajo:
 3. **4 tarjetas de métricas** — Total registrados (+N en la última hora, calculado con `_creationTime`), Talleres activos (`N de M con cupo abierto`), Más solicitado (keyword + alumnos + % de capacidad; borde `secondary` cuando está crítico), Cupos disponibles (+ % global restante).
 4. **Tabs de filtro + buscador** — un tab por taller con su conteo real (`TODOS (148)`, `IA (38)`, …), estado activo `bg-secondary`. Buscador filtra por cuenta o nombre en vivo, `ESC` limpia.
 5. **Tabla** — barra de ventana tipo terminal + columnas `# · NÚMERO DE CUENTA · NOMBRE · CORREO · TALLER · GRUPO · ACCIONES`. Filas alternan `surface-container-low` / `surface-container-lowest`. El badge del taller usa `keyword` y el color de `accent`. Acciones `[VER]` (modal con la ficha completa), `[MOVER]` (selector de taller destino → `registrations.move`, que ya existe) y `[BORRAR]` (confirmación antes de la mutation).
-6. **Paginación + export** — 7 registros por página como en el HTML, texto `MOSTRANDO 1-7 DE N // PÁGINA 1 DE M`, y `EXPORTAR CSV` real (respetando el filtro/búsqueda activos).
+6. **Paginación + export** — ✅ 7 por página, `MOSTRANDO 1-7 DE N // PÁGINA 1 DE M`, y `EXPORTAR CSV` real respetando filtro y búsqueda activos. El archivo lleva BOM UTF-8 para que Excel abra los acentos, y todas las celdas van entrecomilladas porque los nombres pueden traer comas.
 7. **Estado vacío** — ✅ diseñado en el mismo lenguaje: `NO_RECORDS_FOUND // BUFFER VACÍO` cuando no hay coincidencias, y `SYNC_IN_PROGRESS // LEYENDO BUFFER` mientras carga.
 
 Todo es reactivo: al llegar un registro nuevo desde `/registro`, `useQuery` actualiza tabla y métricas solo.
@@ -300,7 +300,7 @@ Discreto y consistente con el brutalismo (movimientos cortos y secos, nada de ea
 | **F2** ✅ | `/registro` completo (UI + validación + mutation + estados de error) | `form.html` ✅ |
 | **F3** ✅ | Better Auth + seed de admin por CLI + `/login` + `proxy.ts` | `login.html` ✅ |
 | **F4** ✅ | `/dashboard`: tabla, tabs, buscador, paginación, métricas, `[VER]`, `[BORRAR]`, logout | `dashboard.html` ✅ |
-| **F5** | `[MOVER]` (UI; la mutation ya existe) y export CSV | F4 |
+| **F5** ✅ | `[MOVER]` (UI) y export CSV | F4 |
 | **F6** | Motion, estados vacíos/carga, responsive, deploy | F2–F5 |
 
 Deploy: Vercel + `pnpm convex deploy`.
@@ -316,6 +316,6 @@ Deploy: Vercel + `pnpm convex deploy`.
 2. **Catálogo real de talleres** — ⏳ pendiente. Mientras tanto se siembra un **catálogo ficticio** (los 5 del HTML) desde `convex/seed.ts`; sustituirlo es un solo `pnpm convex run` cuando lleguen los datos reales.
 3. ~~**Grupos**~~ — ✅ resuelto. Catálogo definitivo: `101, 102, 301, 302, 501, 502, 701, 702`. Los `G-401` / `G-601` / `G-801` del dashboard eran datos de mock y se descartan.
 4. **Cierre de registros** — ¿un switch global para cerrar la convocatoria en cierta fecha?
-5. ~~**Edición de registros**~~ — ✅ resuelto en backend: `registrations.move` ya reasigna de taller de forma transaccional y sella `reassignedAt`. Falta sólo el botón `[MOVER]` en la tabla del dashboard (F5) y decidir si el admin debe poder **forzar** un movimiento a un taller lleno; hoy se rechaza con `WORKSHOP_FULL`.
+5. ~~**Edición de registros**~~ — ✅ completo: `registrations.move` reasigna de forma transaccional y sella `reassignedAt`, y el botón `[MOVER]` ya está en la tabla y en la ficha. Queda una decisión abierta: si el admin debe poder **forzar** un movimiento a un taller lleno; hoy se rechaza con `WORKSHOP_FULL` tanto en la UI (opción deshabilitada) como en el servidor.
 6. **Rate limiting** — la mutation de registro es pública. Con el filtro de dominio `@uaeh.edu.mx` + unicidad por cuenta el riesgo es bajo, pero conviene un límite por IP si se expone abierto. Aplica igual a `registrations.lookup`, que es enumerable por número de cuenta.
 7. **Nivel de enmascarado en `/estatus`** — hoy la card muestra nombre e email parcialmente ocultos. Alternativas: (a) mostrarlos completos, más cómodo pero deja cosechar datos por fuerza bruta sobre 6 dígitos; (b) exigir cuenta **y** correo juntos, lo más estricto, pero obliga al alumno a recordar ambos. Se eligió el punto medio; cambiarlo es una línea.
