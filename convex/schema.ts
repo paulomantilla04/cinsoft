@@ -32,6 +32,13 @@ export default defineSchema({
     // Sólo presente si el admin reasignó al alumno. `/estatus` lo muestra para
     // que el alumno entienda por qué su taller cambió sin que nadie le avisara.
     reassignedAt: v.optional(v.number()),
+    // Constancia de que se aceptó el aviso de privacidad. La marca la pone el
+    // servidor, no el cliente, para que sea prueba y no un dato declarado.
+    acceptedPrivacyAt: v.optional(v.number()),
+    // Consentimiento para las finalidades secundarias del aviso (fotos en
+    // redes, material promocional, invitaciones). El §3.2 dice que negarse no
+    // impide participar, así que va aparte del consentimiento principal.
+    allowsSecondaryUse: v.optional(v.boolean()),
   })
     .index("by_account", ["accountNumber"])
     .index("by_email", ["email"])

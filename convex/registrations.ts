@@ -18,8 +18,19 @@ export const create = mutation({
     fullName: v.string(),
     group: v.string(),
     workshopId: v.id("workshops"),
+    acceptedPrivacy: v.boolean(),
+    allowsSecondaryUse: v.boolean(),
   },
   handler: async (ctx, args) => {
+    // 0. El consentimiento se comprueba en el servidor: que la UI no deje
+    // enviar sin aceptar es comodidad, no garantía.
+    if (!args.acceptedPrivacy) {
+      throw new ConvexError({
+        code: "PRIVACY_NOT_ACCEPTED",
+        message: "Debes aceptar el aviso de privacidad para registrarte.",
+      });
+    }
+
     // 1 y 2. Normalizar y validar con el mismo esquema que usa el cliente.
     const parsed = registrationSchema.safeParse(args);
     if (!parsed.success) {
@@ -76,6 +87,9 @@ export const create = mutation({
       fullName,
       group,
       workshopId: workshop._id,
+      // La hora la fija el servidor: un cliente podría declarar cualquiera.
+      acceptedPrivacyAt: Date.now(),
+      allowsSecondaryUse: args.allowsSecondaryUse,
     });
     await ctx.db.patch(workshop._id, { enrolled: workshop.enrolled + 1 });
 
@@ -120,6 +134,8 @@ export const listAll = query({
         fullName: registration.fullName,
         group: registration.group,
         reassignedAt: registration.reassignedAt,
+        acceptedPrivacyAt: registration.acceptedPrivacyAt,
+        allowsSecondaryUse: registration.allowsSecondaryUse,
         workshop: {
           keyword: workshop?.keyword ?? "—",
           slug: workshop?.slug ?? "unknown",
@@ -229,6 +245,8 @@ export const lookup = query({
         group: registration.group,
         registeredAt: registration._creationTime,
         reassignedAt: registration.reassignedAt,
+        acceptedPrivacyAt: registration.acceptedPrivacyAt,
+        allowsSecondaryUse: registration.allowsSecondaryUse,
         workshop: {
           name: workshop?.name ?? "—",
           keyword: workshop?.keyword ?? "—",

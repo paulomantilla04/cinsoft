@@ -30,10 +30,32 @@ const materialSymbols = localFont({
   display: "block",
 });
 
+const SITE_URL = "https://cinsoft.vercel.app";
+const TITLE = "CINSOFT 2026 // Registro a Talleres";
+const DESCRIPTION =
+  "Registro a talleres del congreso CINSOFT 2026 — Facultad de Ingeniería en Computación & Telemática.";
+
 export const metadata: Metadata = {
-  title: "CINSOFT 2026 // Registro a Talleres",
-  description:
-    "Registro a talleres del congreso CINSOFT 2026 — Facultad de Ingeniería en Computación & Telemática.",
+  // Sin `metadataBase` las URLs de Open Graph salen relativas y las redes no
+  // resuelven la imagen; en build Next avisa y cae a localhost.
+  metadataBase: new URL(SITE_URL),
+  title: TITLE,
+  description: DESCRIPTION,
+  openGraph: {
+    // La imagen la aporta `app/opengraph-image.png` por convención de archivo:
+    // Next añade solo la URL, el tipo y las dimensiones.
+    title: TITLE,
+    description: DESCRIPTION,
+    url: SITE_URL,
+    siteName: "CINSOFT 2026",
+    locale: "es_MX",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESCRIPTION,
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

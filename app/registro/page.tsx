@@ -3,12 +3,14 @@
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
 import { BrutalistSelect } from "@/components/brutalist-select";
+import { Modal, ModalHeader } from "@/components/modal";
+import { PrivacyNotice } from "@/components/privacy-notice";
 import logoCinsoft from "@/public/logo-cinsoft.png";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -37,6 +39,18 @@ export default function RegistroPage() {
     code: string;
     message: string;
   } | null>(null);
+  // Datos ya validados esperando a que se acepte el aviso. Se valida ANTES de
+  // abrir el modal para no hacer leer el aviso y fallar después por un campo.
+  const [pending, setPending] = useState<RegistrationInput | null>(null);
+  const [isSending, setIsSending] = useState(false);
+  // Permite releer el aviso sin tener que intentar enviar el formulario.
+  const [readingNotice, setReadingNotice] = useState(false);
+  // Finalidades secundarias (§3.2): arranca MARCADA. La LFPDPPP admite
+  // consentimiento tácito para finalidades secundarias con datos no sensibles
+  // —la imagen no lo es— mientras el aviso esté disponible y haya un medio
+  // claro de oponerse, que es como está redactado el §6. Lo que sostiene esa
+  // validez es que la casilla se vea y se entienda, no que venga vacía.
+  const [allowsSecondaryUse, setAllowsSecondaryUse] = useState(true);
 
   const reduced = useReducedMotion();
   // Stagger de los 5 bloques del formulario, ~40ms entre cada uno.
@@ -64,14 +78,25 @@ export default function RegistroPage() {
   const selected = workshops?.find((workshop) => workshop._id === selectedId);
   const isDone = confirmation !== null;
 
-  const onSubmit = handleSubmit(async (values) => {
+  // `handleSubmit` sólo llama a esto si el formulario es válido, así que el
+  // aviso únicamente aparece cuando el registro ya puede enviarse.
+  const onSubmit = handleSubmit((values) => {
     setServerError(null);
+    setPending(values);
+  });
+
+  const acceptAndSend = async () => {
+    if (pending === null) return;
+    setIsSending(true);
     try {
       const result = await createRegistration({
-        ...values,
-        workshopId: values.workshopId as Id<"workshops">,
+        ...pending,
+        workshopId: pending.workshopId as Id<"workshops">,
+        acceptedPrivacy: true,
+        allowsSecondaryUse,
       });
       setConfirmation(result);
+      setPending(null);
     } catch (error) {
       // El servidor lanza ConvexError({ code, message }) para poder pintar el
       // banner correcto en vez de un error genérico.
@@ -82,8 +107,11 @@ export default function RegistroPage() {
           data?.message ??
           "No se pudo completar el registro. Intenta de nuevo.",
       });
+      setPending(null);
+    } finally {
+      setIsSending(false);
     }
-  });
+  };
 
   return (
     <main className="w-full pt-20 bg-transparent min-h-screen">
@@ -280,7 +308,7 @@ export default function RegistroPage() {
                       ? "bg-surface-bright text-on-surface"
                       : "bg-primary text-on-primary"
                   }`}
-                  disabled={isSubmitting || isDone}
+                  disabled={isSubmitting || isSending || isDone}
                   type="submit"
                 >
                   {isDone ? (
@@ -290,7 +318,7 @@ export default function RegistroPage() {
                       </span>
                       <span>REGISTRO COMPLETADO</span>
                     </>
-                  ) : isSubmitting ? (
+                  ) : isSubmitting || isSending ? (
                     <>
                       <span className="material-symbols-outlined animate-spin text-[20px]">
                         sync
@@ -299,7 +327,7 @@ export default function RegistroPage() {
                     </>
                   ) : (
                     <>
-                      <span>ENVIAR REGISTRO</span>
+                      <span>CONTINUAR AL AVISO</span>
                       <span className="material-symbols-outlined font-bold text-[22px]">
                         arrow_forward
                       </span>
@@ -337,15 +365,143 @@ export default function RegistroPage() {
           )}
           {serverError === null ? null : <ErrorBanner error={serverError} />}
 
-          <Link
-            className="mt-space-lg font-code-badge text-code-badge text-on-surface-variant hover:text-primary underline underline-offset-4 decoration-2 decoration-primary uppercase"
-            href="/estatus"
-          >
-            ¿YA TE INSCRIBISTE? CONSULTA TU ESTATUS
-          </Link>
+          <div className="mt-space-lg flex flex-col items-center gap-space-xs">
+            <Link
+              className="font-code-badge text-code-badge text-on-surface-variant hover:text-primary underline underline-offset-4 decoration-2 decoration-primary uppercase"
+              href="/estatus"
+            >
+              ¿YA TE INSCRIBISTE? CONSULTA TU ESTATUS
+            </Link>
+            <button
+              className="font-code-badge text-code-badge text-on-surface-variant hover:text-primary underline underline-offset-4 decoration-2 decoration-primary uppercase"
+              onClick={() => setReadingNotice(true)}
+              type="button"
+            >
+              LEER EL AVISO DE PRIVACIDAD
+            </button>
+          </div>
         </div>
       </div>
+
+      <AnimatePresence>
+        {pending === null ? null : (
+          <PrivacyModal
+            allowsSecondaryUse={allowsSecondaryUse}
+            confirmLabel="ACEPTO Y ENVÍO MI REGISTRO"
+            isSending={isSending}
+            key="privacy-gate"
+            onAccept={acceptAndSend}
+            onClose={() => setPending(null)}
+            onToggleSecondary={setAllowsSecondaryUse}
+          />
+        )}
+
+        {readingNotice ? (
+          <PrivacyModal
+            key="privacy-read"
+            onClose={() => setReadingNotice(false)}
+          />
+        ) : null}
+      </AnimatePresence>
     </main>
+  );
+}
+
+/**
+ * Aviso de privacidad. Con `onAccept` es la puerta previa al envío; sin él es
+ * sólo lectura, para poder consultarlo sin intentar registrarse.
+ */
+function PrivacyModal({
+  allowsSecondaryUse,
+  confirmLabel,
+  isSending = false,
+  onAccept,
+  onClose,
+  onToggleSecondary,
+}: {
+  allowsSecondaryUse?: boolean;
+  confirmLabel?: string;
+  isSending?: boolean;
+  onAccept?: () => void;
+  onClose: () => void;
+  onToggleSecondary?: (value: boolean) => void;
+}) {
+  return (
+    <Modal labelledBy="privacy-title" onClose={onClose} size="lg">
+      <ModalHeader
+        id="privacy-title"
+        onClose={onClose}
+        title="AVISO DE PRIVACIDAD INTEGRAL"
+      />
+
+      <div className="scrollbar-brutal overflow-y-auto p-space-lg flex-1 min-h-0">
+        <PrivacyNotice />
+      </div>
+
+      <div className="border-t-4 border-primary bg-surface-container p-space-md flex flex-col gap-space-md">
+        {onToggleSecondary === undefined ? null : (
+          <label className="flex items-start gap-3 cursor-pointer select-none group">
+            <input
+              checked={allowsSecondaryUse === true}
+              className="sr-only peer"
+              disabled={isSending}
+              onChange={(event) => onToggleSecondary(event.target.checked)}
+              type="checkbox"
+            />
+            <div className="w-5 h-5 shrink-0 mt-0.5 bg-surface border-[3px] border-primary flex items-center justify-center peer-checked:bg-primary transition-none">
+              <span className="material-symbols-outlined text-[14px] text-on-primary font-black opacity-0 peer-checked:opacity-100">
+                check
+              </span>
+            </div>
+            <span className="font-body-sm text-body-sm text-on-surface">
+              Autorizo el uso de mis datos e imagen para las finalidades
+              secundarias del punto 3.2 (difusión en redes de la UAEH LIS,
+              material promocional e invitaciones a próximas actividades).
+              <span className="block font-code-badge text-code-badge text-secondary mt-space-2xs uppercase">
+                ¿No lo autorizas? Desmarca esta casilla. No afecta a tu
+                inscripción.
+              </span>
+            </span>
+          </label>
+        )}
+
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2">
+        <button
+          className="px-space-lg py-3 bg-surface-container-high text-on-surface font-label-caps text-label-caps border-2 border-outline hover:border-primary shadow-[2px_2px_0px_#000] disabled:opacity-40"
+          disabled={isSending}
+          onClick={onClose}
+          type="button"
+        >
+          {onAccept === undefined ? "[CERRAR]" : "[CANCELAR]"}
+        </button>
+
+        {onAccept === undefined ? null : (
+          <button
+            className="px-space-lg py-3 bg-primary text-on-primary font-label-caps text-label-caps border-[3px] border-black shadow-[4px_4px_0px_#000000] hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0px_#000000] active:translate-x-1 active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={isSending}
+            onClick={onAccept}
+            type="button"
+          >
+            {isSending ? (
+              <>
+                <span className="material-symbols-outlined animate-spin text-[18px]">
+                  sync
+                </span>
+                <span>ENVIANDO...</span>
+              </>
+            ) : (
+              <>
+                <span>{confirmLabel}</span>
+                <span className="material-symbols-outlined text-[18px]">
+                  check
+                </span>
+              </>
+            )}
+          </button>
+        )}
+        </div>
+      </div>
+    </Modal>
   );
 }
 

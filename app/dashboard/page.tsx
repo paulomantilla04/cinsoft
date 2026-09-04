@@ -810,6 +810,18 @@ function DetailModal({
             value={formatTimestamp(row.reassignedAt)}
           />
         )}
+        <ModalField
+          label="AVISO ACEPTADO"
+          value={
+            row.acceptedPrivacyAt === undefined
+              ? "SIN CONSTANCIA"
+              : formatTimestamp(row.acceptedPrivacyAt)
+          }
+        />
+        <ModalField
+          label="USO DE IMAGEN (3.2)"
+          value={row.allowsSecondaryUse === true ? "AUTORIZADO" : "NO AUTORIZADO"}
+        />
       </dl>
 
       <div className="px-space-lg pb-space-lg flex justify-end gap-2">
@@ -1064,6 +1076,8 @@ const CSV_HEADERS = [
   "GRUPO",
   "REGISTRADO",
   "REASIGNADO",
+  "AVISO ACEPTADO",
+  "USO DE IMAGEN 3.2",
 ];
 
 /** Entrecomilla siempre: los nombres pueden traer comas y el CSV se rompería. */
@@ -1085,6 +1099,10 @@ function toCsv(rows: Row[]) {
         row.reassignedAt === undefined
           ? ""
           : formatTimestamp(row.reassignedAt),
+        row.acceptedPrivacyAt === undefined
+          ? "SIN CONSTANCIA"
+          : formatTimestamp(row.acceptedPrivacyAt),
+        row.allowsSecondaryUse === true ? "AUTORIZADO" : "NO AUTORIZADO",
       ]
         .map(csvCell)
         .join(","),
