@@ -205,6 +205,27 @@
   display: none;
 }
 
+/* El scrollbar global va oculto, pero dentro del aviso de privacidad sí debe
+   verse: sin barra nadie sabe que quedan ocho secciones por leer. */
+.scrollbar-brutal {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-primary) var(--color-surface-container);
+}
+
+.scrollbar-brutal::-webkit-scrollbar {
+  display: block;
+  width: 10px;
+}
+
+.scrollbar-brutal::-webkit-scrollbar-track {
+  background: var(--color-surface-container);
+}
+
+.scrollbar-brutal::-webkit-scrollbar-thumb {
+  background: var(--color-primary);
+  border: 2px solid var(--color-surface-container);
+}
+
 /* Flash de las filas que llegan por reactividad al dashboard. Va en CSS y no
    en Motion porque en un elemento recién montado Motion no tiene color de
    origen y se salta los keyframes. El bloque de prefers-reduced-motion de

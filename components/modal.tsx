@@ -11,6 +11,11 @@ import { motion, useReducedMotion } from "motion/react";
  */
 let openDialogs = 0;
 
+const SIZES = {
+  md: "max-w-[560px]",
+  lg: "max-w-[760px]",
+} as const;
+
 const ACCENT_BORDER = {
   primary: "border-primary",
   secondary: "border-secondary",
@@ -30,11 +35,13 @@ export function Modal({
   children,
   labelledBy,
   onClose,
+  size = "md",
 }: {
   accent?: keyof typeof ACCENT_BORDER;
   children: ReactNode;
   labelledBy: string;
   onClose: () => void;
+  size?: keyof typeof SIZES;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotion();
@@ -92,7 +99,7 @@ export function Modal({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         aria-labelledby={labelledBy}
         aria-modal="true"
-        className={`w-full max-w-[560px] bg-surface-container-low border-4 shadow-[8px_8px_0px_#000000] focus:outline-none ${ACCENT_BORDER[accent]}`}
+        className={`w-full bg-surface-container-low border-4 shadow-[8px_8px_0px_#000000] focus:outline-none flex flex-col max-h-[90vh] ${SIZES[size]} ${ACCENT_BORDER[accent]}`}
         exit={reduced ? undefined : { opacity: 0, scale: 0.97, y: -6 }}
         initial={reduced ? false : { opacity: 0, scale: 0.96, y: -8 }}
         onClick={(event) => event.stopPropagation()}
