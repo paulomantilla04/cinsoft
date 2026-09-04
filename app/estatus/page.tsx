@@ -31,7 +31,7 @@ export default function EstatusPage() {
           {/* HEADER BLOCK */}
           <div className="w-full text-center mb-space-lg select-none">
             <div className="inline-block relative">
-              <h1 className="font-display-hero text-headline-lg text-primary tracking-tighter uppercase inline-block drop-shadow-[4px_4px_0px_#000000]">
+              <h1 className="font-display-hero text-headline-lg-mobile sm:text-headline-lg text-primary tracking-tighter uppercase inline-block drop-shadow-[4px_4px_0px_#000000]">
                 ESTATUS<span className="text-secondary-container">_</span>
               </h1>
             </div>
