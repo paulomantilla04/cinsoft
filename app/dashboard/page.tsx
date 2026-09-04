@@ -176,7 +176,7 @@ export default function DashboardPage() {
       <div className="flex flex-col w-full">
         {/* TOP TELEMETRY STRIP */}
         <div className="w-full bg-surface-container-lowest border-b-4 border-primary px-margin-mobile lg:px-margin-desktop py-space-xs">
-          <div className="max-w-[1360px] mx-auto flex flex-wrap items-center justify-between gap-space-xs font-code-badge text-code-badge text-on-surface-variant">
+          <div className="max-w-340 mx-auto flex flex-wrap items-center justify-between gap-space-xs font-code-badge text-code-badge text-on-surface-variant">
             <div className="flex items-center gap-space-sm flex-wrap">
               <span className="text-primary font-bold flex items-center gap-1">
                 <span className="inline-block w-2 h-2 bg-primary animate-pulse" />
@@ -204,7 +204,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="max-w-[1360px] w-full mx-auto px-margin-mobile lg:px-margin-desktop py-space-xl flex flex-col gap-space-2xl">
+        <div className="max-w-340 w-full mx-auto px-margin-mobile lg:px-margin-desktop py-space-xl flex flex-col gap-space-2xl">
           {/* SUBHEADER */}
           <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-space-lg bg-surface-container-low p-space-lg border-4 border-primary shadow-[6px_6px_0px_#000000]">
             <div className="flex flex-col gap-1">
@@ -224,8 +224,7 @@ export default function DashboardPage() {
                 </span>
               </h1>
               <p className="font-body-sm text-body-sm text-on-surface-variant">
-                AUDITORÍA EN TIEMPO REAL // FACULTAD DE INGENIERÍA EN COMPUTACIÓN
-                &amp; TELEMÁTICA
+                AUDITORÍA EN TIEMPO REAL // ESCUELA SUPERIOR DE TLAHUELILPAN
               </p>
             </div>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-space-md">
@@ -327,7 +326,7 @@ export default function DashboardPage() {
               ))}
             </div>
 
-            <div className="relative min-w-full sm:min-w-[340px] lg:min-w-[420px]">
+            <div className="relative min-w-full sm:min-w-85 lg:min-w-105">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-primary font-bold">
                 <span className="material-symbols-outlined text-[20px]">
                   search
@@ -364,7 +363,7 @@ export default function DashboardPage() {
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse min-w-[980px]">
+              <table className="w-full text-left border-collapse min-w-245">
                 <thead>
                   <tr className="bg-primary text-on-primary font-label-caps text-label-caps border-b-4 border-black select-none">
                     <th className="py-space-md px-space-md border-r-2 border-black w-14 text-center" scope="col">
