@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { motion, useReducedMotion } from "motion/react";
 import { authClient } from "@/lib/auth-client";
 
 /** /login — portado 1:1 de design/login.html. */
@@ -10,6 +11,10 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasError, setHasError] = useState(false);
+  // Contador de intentos fallidos: reanima el shake aunque el error ya
+  // estuviera visible, que es justo el caso de reintentar y volver a fallar.
+  const [failures, setFailures] = useState(0);
+  const reduced = useReducedMotion();
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -19,6 +24,7 @@ export default function LoginPage() {
 
     if (email === "" || password === "") {
       setHasError(true);
+      setFailures((count) => count + 1);
       return;
     }
 
@@ -29,6 +35,7 @@ export default function LoginPage() {
       // Mensaje genérico a propósito: distinguir "no existe" de "contraseña
       // incorrecta" le confirmaría a un atacante qué correos son válidos.
       setHasError(true);
+      setFailures((count) => count + 1);
       setIsSubmitting(false);
       return;
     }
@@ -58,7 +65,14 @@ export default function LoginPage() {
           </div>
 
           {/* 2. TARJETA DE LOGIN */}
-          <div className="w-full bg-surface-container-low border-[3px] border-on-surface shadow-[8px_8px_0px_#8cc63f] p-space-md sm:p-space-lg flex flex-col">
+          <motion.div
+            animate={
+              reduced || failures === 0 ? {} : { x: [0, -8, 8, -5, 5, 0] }
+            }
+            className="w-full bg-surface-container-low border-[3px] border-on-surface shadow-[8px_8px_0px_#8cc63f] p-space-md sm:p-space-lg flex flex-col"
+            key={failures}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+          >
             <div className="flex items-center justify-between border-b-[2px] border-outline-variant pb-space-xs mb-space-md font-code-badge text-code-badge text-on-surface-variant">
               <span className="flex items-center gap-1.5 text-primary">
                 <span className="material-symbols-outlined text-[14px]">
@@ -229,7 +243,7 @@ export default function LoginPage() {
                 INTRODUCCIÓN NO AUTORIZADA SERÁ NOTIFICADO.
               </p>
             </div>
-          </div>
+          </motion.div>
 
           {/* 3. PIE */}
           <div className="mt-space-lg text-center flex flex-col items-center gap-1 font-code-badge text-code-badge text-on-surface-variant opacity-75">

@@ -205,6 +205,26 @@
   display: none;
 }
 
+/* Flash de las filas que llegan por reactividad al dashboard. Va en CSS y no
+   en Motion porque en un elemento recién montado Motion no tiene color de
+   origen y se salta los keyframes. El bloque de prefers-reduced-motion de
+   abajo la neutraliza sola. */
+@keyframes row-flash {
+  0% {
+    background-color: rgba(166, 227, 88, 0);
+  }
+  12% {
+    background-color: rgba(166, 227, 88, 0.35);
+  }
+  100% {
+    background-color: rgba(166, 227, 88, 0);
+  }
+}
+
+.row-flash {
+  animation: row-flash 1.2s ease-out;
+}
+
 .bg-dot-matrix {
   background-image: radial-gradient(#1e354d 1.5px, transparent 1.5px);
   background-size: 24px 24px;

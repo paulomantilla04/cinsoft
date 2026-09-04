@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { motion, useReducedMotion } from "motion/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "convex/react";
@@ -34,6 +35,17 @@ export default function RegistroPage() {
     message: string;
   } | null>(null);
 
+  const reduced = useReducedMotion();
+  // Stagger de los 5 bloques del formulario, ~40ms entre cada uno.
+  const stagger = reduced
+    ? {}
+    : {
+        initial: "hidden" as const,
+        animate: "visible" as const,
+        variants: {
+          visible: { transition: { staggerChildren: 0.04 } },
+        },
+      };
   const {
     register,
     handleSubmit,
@@ -76,7 +88,7 @@ export default function RegistroPage() {
           {/* HEADER BLOCK */}
           <div className="w-full text-center mb-space-lg select-none">
             <div className="inline-block relative">
-              <h1 className="font-display-hero text-display-hero text-primary tracking-tighter uppercase inline-block drop-shadow-[4px_4px_0px_#000000]">
+              <h1 className="font-display-hero text-display-hero-mobile sm:text-display-hero text-primary tracking-tighter uppercase inline-block drop-shadow-[4px_4px_0px_#000000]">
                 CINS<span className="text-secondary-container">{"{ }"}</span>FT
               </h1>
               <div className="absolute -top-3 -right-6 px-1.5 py-0.5 bg-secondary-container text-on-secondary font-code-badge text-code-badge tracking-widest uppercase border-2 border-black rotate-6">
@@ -101,7 +113,11 @@ export default function RegistroPage() {
               </span>
             </div>
 
-            <form className="flex flex-col gap-space-md" onSubmit={onSubmit}>
+            <motion.form
+              className="flex flex-col gap-space-md"
+              onSubmit={onSubmit}
+              {...stagger}
+            >
               {/* 1. NÚMERO DE CUENTA */}
               <Field
                 error={errors.accountNumber?.message}
@@ -195,7 +211,11 @@ export default function RegistroPage() {
               </Field>
 
               {/* 5. TALLER */}
-              <div className="flex flex-col gap-space-2xs">
+              <motion.div
+                className="flex flex-col gap-space-2xs"
+                transition={BLOCK_TRANSITION}
+                variants={BLOCK_VARIANTS}
+              >
                 <div className="flex items-center justify-between">
                   <label
                     className="font-label-caps text-label-caps text-on-surface uppercase tracking-wider"
@@ -233,10 +253,14 @@ export default function RegistroPage() {
                 {errors.workshopId?.message === undefined ? null : (
                   <FieldError message={errors.workshopId.message} />
                 )}
-              </div>
+              </motion.div>
 
               {/* SUBMIT BUTTON */}
-              <div className="mt-space-sm pt-space-xs">
+              <motion.div
+                className="mt-space-sm pt-space-xs"
+                transition={BLOCK_TRANSITION}
+                variants={BLOCK_VARIANTS}
+              >
                 <button
                   className={`w-full font-label-caps text-headline-sm uppercase tracking-wider border-[3px] border-black shadow-[6px_6px_0px_#000000] py-4 px-6 hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[4px_4px_0px_#000000] active:translate-x-1.5 active:translate-y-1.5 active:shadow-none transition-all flex items-center justify-center gap-3 cursor-pointer ${
                     isDone
@@ -269,10 +293,14 @@ export default function RegistroPage() {
                     </>
                   )}
                 </button>
-              </div>
+              </motion.div>
 
               {/* FOOTNOTE BADGE */}
-              <div className="w-full flex items-center justify-center gap-2 mt-space-2xs">
+              <motion.div
+                className="w-full flex items-center justify-center gap-2 mt-space-2xs"
+                transition={BLOCK_TRANSITION}
+                variants={BLOCK_VARIANTS}
+              >
                 <div className="inline-flex items-center gap-2 border border-secondary-container bg-surface px-3 py-1 text-secondary-container">
                   <span className="material-symbols-outlined text-[16px]">
                     warning
@@ -281,8 +309,8 @@ export default function RegistroPage() {
                     CUPO LIMITADO POR TALLER
                   </span>
                 </div>
-              </div>
-            </form>
+              </motion.div>
+            </motion.form>
 
             {/* SYSTEM STATUS FOOTER INSIDE CARD */}
             <div className="mt-space-lg pt-space-sm border-t border-primary/20 flex flex-wrap items-center justify-between gap-2 font-code-badge text-code-badge text-on-surface-variant">
@@ -307,6 +335,17 @@ export default function RegistroPage() {
     </main>
   );
 }
+
+/**
+ * Variantes de cada bloque del formulario. Los hijos heredan `initial`/`animate`
+ * del `motion.form`; si ese no anima (reduced motion), estos tampoco.
+ */
+const BLOCK_VARIANTS = {
+  hidden: { opacity: 0, y: 6 },
+  visible: { opacity: 1, y: 0 },
+};
+
+const BLOCK_TRANSITION = { duration: 0.16, ease: "easeOut" as const };
 
 type Workshop = NonNullable<
   ReturnType<typeof useQuery<typeof api.workshops.list>>
@@ -391,7 +430,11 @@ function Field({
   label: string;
 }) {
   return (
-    <div className="flex flex-col gap-space-2xs">
+    <motion.div
+      className="flex flex-col gap-space-2xs"
+      transition={BLOCK_TRANSITION}
+      variants={BLOCK_VARIANTS}
+    >
       <div className="flex items-center justify-between">
         <label
           className="font-label-caps text-label-caps text-on-surface uppercase tracking-wider"
@@ -405,7 +448,7 @@ function Field({
       </div>
       {children}
       {error === undefined ? null : <FieldError message={error} />}
-    </div>
+    </motion.div>
   );
 }
 
@@ -419,7 +462,12 @@ function FieldError({ message }: { message: string }) {
 
 function SuccessBanner({ confirmation }: { confirmation: Confirmation }) {
   return (
-    <div className="w-full mt-space-md p-4 bg-surface-container border-[3px] border-primary shadow-[6px_6px_0px_#000000]">
+    <motion.div
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      className="w-full mt-space-md p-4 bg-surface-container border-[3px] border-primary shadow-[6px_6px_0px_#000000]"
+      initial={{ opacity: 0, scale: 0.96, y: -4 }}
+      transition={{ duration: 0.18, ease: "easeOut" }}
+    >
       <div className="flex items-start gap-3">
         <span className="material-symbols-outlined text-primary text-[28px]">
           verified
@@ -443,7 +491,7 @@ function SuccessBanner({ confirmation }: { confirmation: Confirmation }) {
           </p>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -453,7 +501,12 @@ function ErrorBanner({ error }: { error: { code: string; message: string } }) {
     "ERROR DEL SISTEMA";
 
   return (
-    <div className="w-full mt-space-md p-4 bg-surface-container border-[3px] border-secondary-container shadow-[6px_6px_0px_#000000]">
+    <motion.div
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      className="w-full mt-space-md p-4 bg-surface-container border-[3px] border-secondary-container shadow-[6px_6px_0px_#000000]"
+      initial={{ opacity: 0, scale: 0.96, y: -4 }}
+      transition={{ duration: 0.18, ease: "easeOut" }}
+    >
       <div className="flex items-start gap-3">
         <span className="material-symbols-outlined text-secondary text-[28px]">
           warning
@@ -465,6 +518,6 @@ function ErrorBanner({ error }: { error: { code: string; message: string } }) {
           <p className="font-body-sm text-on-surface mt-0.5">{error.message}</p>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }

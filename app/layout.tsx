@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import localFont from "next/font/local";
 import { ConvexClientProvider } from "@/components/convex-client-provider";
+import { PageTransition } from "@/components/page-transition";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import "./globals.css";
@@ -44,7 +45,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="bg-background font-body-md text-on-surface bg-dot-matrix min-h-screen">
         <ConvexClientProvider>
           <SiteHeader />
-          {children}
+          <PageTransition>{children}</PageTransition>
           <SiteFooter />
         </ConvexClientProvider>
       </body>

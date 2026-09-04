@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  AnimatePresence,
+  animate,
+  motion,
+  useReducedMotion,
+} from "motion/react";
 import { useRouter } from "next/navigation";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
@@ -19,6 +25,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const session = authClient.useSession();
   const { isAuthenticated } = useConvexAuth();
+  const reduced = useReducedMotion();
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   // Las queries protegidas sólo se suscriben con sesión viva. Sin esto, al
@@ -134,6 +141,25 @@ export default function DashboardPage() {
     window.setTimeout(() => setExportState("idle"), 1800);
   };
 
+  // Filas que llegaron por reactividad después de la carga inicial: se marcan
+  // con un flash verde. El primer lote no cuenta, o parpadearía toda la tabla.
+  const seenIds = useRef<Set<string> | null>(null);
+  const [freshIds, setFreshIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (rows === undefined) return;
+    const ids = new Set(rows.map((row) => row._id));
+    if (seenIds.current === null) {
+      seenIds.current = ids;
+      return;
+    }
+    const incoming = [...ids].filter((id) => !seenIds.current!.has(id));
+    seenIds.current = ids;
+    if (incoming.length === 0) return;
+    setFreshIds(new Set(incoming));
+    const timer = window.setTimeout(() => setFreshIds(new Set()), 1500);
+    return () => window.clearTimeout(timer);
+  }, [rows]);
+
   const isLoading = rows === undefined;
 
   return (
@@ -181,7 +207,7 @@ export default function DashboardPage() {
                   [ADMIN_PANEL_ROOT]
                 </span>
               </div>
-              <h1 className="font-display-hero text-headline-lg text-on-background tracking-tight flex flex-wrap items-center gap-2">
+              <h1 className="font-display-hero text-headline-lg-mobile lg:text-headline-lg text-on-background tracking-tight flex flex-wrap items-center gap-2">
                 PANEL DE CONTROL{" "}
                 <span className="text-secondary-container">{"//"}</span>{" "}
                 <span className="text-primary font-display-hero">
@@ -234,8 +260,9 @@ export default function DashboardPage() {
                     </span>
                   </>
                 }
+                format={pad2}
                 label="TOTAL REGISTRADOS"
-                value={String(stats?.totalRegistrations ?? 0).padStart(2, "0")}
+                value={stats?.totalRegistrations ?? 0}
               />
               <StatCard
                 code="MOD-05"
@@ -250,8 +277,9 @@ export default function DashboardPage() {
                     </span>
                   </>
                 }
+                format={pad2}
                 label="TALLERES ACTIVOS"
-                value={String(stats?.activeWorkshops ?? 0).padStart(2, "0")}
+                value={stats?.activeWorkshops ?? 0}
               />
               <TopWorkshopCard top={stats?.topWorkshop ?? null} />
               <StatCard
@@ -267,7 +295,7 @@ export default function DashboardPage() {
                   </>
                 }
                 label="CUPOS DISPONIBLES"
-                value={String(stats?.availableSeats ?? 0)}
+                value={stats?.availableSeats ?? 0}
               />
             </div>
           </section>
@@ -311,12 +339,12 @@ export default function DashboardPage() {
 
           {/* DATA TABLE */}
           <section className="bg-surface-container-lowest border-4 border-primary shadow-[8px_8px_0px_#000000] overflow-hidden">
-            <div className="bg-surface-container-high border-b-4 border-primary px-space-md py-space-xs flex items-center justify-between">
-              <div className="flex items-center gap-2">
+            <div className="bg-surface-container-high border-b-4 border-primary px-space-md py-space-xs flex flex-wrap items-center justify-between gap-x-space-sm gap-y-space-2xs">
+              <div className="flex items-center gap-2 min-w-0">
                 <span className="w-3 h-3 bg-secondary-container border border-black inline-block" />
                 <span className="w-3 h-3 bg-primary-container border border-black inline-block" />
                 <span className="w-3 h-3 bg-primary border border-black inline-block" />
-                <span className="ml-2 font-code-badge text-code-badge text-on-surface-variant font-bold uppercase">
+                <span className="ml-2 font-code-badge text-code-badge text-on-surface-variant font-bold uppercase truncate">
                   DATABASE://WORKSHOP_PARTICIPANTS_INDEX
                 </span>
               </div>
@@ -354,14 +382,23 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="font-body-md text-body-md text-on-surface divide-y-2 divide-surface-container-high">
-                  {pageRows.map((row, index) => (
-                    <tr
+                  <AnimatePresence initial={false}>
+                    {pageRows.map((row, index) => (
+                    <motion.tr
+                      animate={{ opacity: 1 }}
                       className={`hover:bg-surface-container transition-colors ${
                         index % 2 === 0
                           ? "bg-surface-container-low"
                           : "bg-surface-container-lowest"
-                      }`}
+                      } ${freshIds.has(row._id) ? "row-flash" : ""}`}
+                      exit={reduced ? {} : { opacity: 0 }}
+                      initial={reduced ? {} : { opacity: 0 }}
                       key={row._id}
+                      layout={reduced ? false : "position"}
+                      transition={{
+                        duration: 0.16,
+                        delay: reduced ? 0 : Math.min(index, 6) * 0.025,
+                      }}
                     >
                       <td className="py-space-md px-space-md border-r-2 border-surface-container-high text-center font-code-badge text-primary font-bold">
                         {String(start + index + 1).padStart(2, "0")}
@@ -415,8 +452,9 @@ export default function DashboardPage() {
                           </button>
                         </div>
                       </td>
-                    </tr>
-                  ))}
+                    </motion.tr>
+                    ))}
+                  </AnimatePresence>
                 </tbody>
               </table>
 
@@ -546,6 +584,8 @@ export default function DashboardPage() {
   );
 }
 
+const pad2 = (value: number) => String(value).padStart(2, "0");
+
 const ACCENT_CLASSES = {
   primary: "text-primary border-primary",
   secondary: "text-secondary border-secondary",
@@ -623,13 +663,15 @@ function FilterTab({
 function StatCard({
   code,
   footer,
+  format,
   label,
   value,
 }: {
   code: string;
   footer: React.ReactNode;
+  format?: (value: number) => string;
   label: string;
-  value: string;
+  value: number;
 }) {
   return (
     <div className="bg-surface-container-low border-4 border-primary p-space-lg shadow-[6px_6px_0px_#000000] flex flex-col justify-between relative">
@@ -643,7 +685,7 @@ function StatCard({
       </div>
       <div className="my-space-xs">
         <span className="font-display-hero text-display-hero text-primary leading-none block">
-          {value}
+          <CountUp format={format} value={value} />
         </span>
       </div>
       <div className="pt-space-xs flex items-center justify-between text-body-sm font-body-sm">
@@ -670,11 +712,11 @@ function TopWorkshopCard({
         </span>
       </div>
       <div className="my-space-xs">
-        <span className="font-display-hero text-headline-lg text-on-surface leading-tight block">
+        <span className="font-display-hero text-headline-lg-mobile lg:text-headline-lg text-on-surface leading-tight block">
           {top?.keyword ?? "—"}
         </span>
         <span className="font-label-caps text-headline-sm text-secondary font-bold mt-1 block">
-          {top?.enrolled ?? 0} ALUMNOS
+          <CountUp value={top?.enrolled ?? 0} /> ALUMNOS
         </span>
       </div>
       <div className="pt-space-xs flex items-center justify-between text-body-sm font-body-sm text-secondary">
@@ -739,7 +781,7 @@ function DetailModal({
         className="w-full max-w-[560px] bg-surface-container-low border-4 border-primary shadow-[8px_8px_0px_#000000]"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="bg-surface-container-high border-b-4 border-primary px-space-md py-space-xs flex items-center justify-between">
+        <div className="bg-surface-container-high border-b-4 border-primary px-space-md py-space-xs flex flex-wrap items-center justify-between gap-x-space-sm gap-y-space-2xs">
           <span className="font-code-badge text-code-badge text-on-surface-variant font-bold uppercase">
             RECORD://{row.accountNumber}
           </span>
@@ -1006,4 +1048,42 @@ function toCsv(rows: Row[]) {
     );
   }
   return lines.join("\r\n");
+}
+
+/**
+ * Cuenta hasta el valor en ~500ms: de 0 la primera vez, y desde el número
+ * anterior en las actualizaciones reactivas, para que un 18 -> 17 no vuelva a
+ * contar desde cero. Con `prefers-reduced-motion` muestra el valor directo.
+ */
+function CountUp({
+  format = (value: number) => String(value),
+  value,
+}: {
+  format?: (value: number) => string;
+  value: number;
+}) {
+  const reduced = useReducedMotion();
+  const [display, setDisplay] = useState(0);
+  // El origen de la animación es siempre lo que se está mostrando, no el
+  // último `value` recibido: si se anclara a `value`, el doble montaje de
+  // efectos en desarrollo dejaría la segunda pasada animando de N a N, sin
+  // emitir ningún onUpdate, y el contador se quedaría clavado en 0.
+  const shown = useRef(0);
+
+  useEffect(() => {
+    // Nada de setState síncrono aquí: con reduced se pinta `value` directo más
+    // abajo, y si no, el valor llega por el onUpdate asíncrono de la animación.
+    if (reduced) return;
+    const controls = animate(shown.current, value, {
+      duration: 0.5,
+      ease: "easeOut",
+      onUpdate: (latest) => {
+        shown.current = latest;
+        setDisplay(Math.round(latest));
+      },
+    });
+    return () => controls.stop();
+  }, [reduced, value]);
+
+  return <>{format(reduced ? value : display)}</>;
 }
