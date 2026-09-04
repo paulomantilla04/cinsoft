@@ -17,6 +17,9 @@ const ACCENTS = {
   },
 } as const;
 
+/** Coincide con `max-h-64` del panel. */
+const PANEL_MAX_HEIGHT = 256;
+
 export type SelectOption = {
   value: string;
   label: string;
@@ -58,11 +61,16 @@ export function BrutalistSelect({
   const tone = ACCENTS[accent];
   const listId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const reduced = useReducedMotion();
 
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  // Abre hacia arriba cuando abajo no cabe. En un móvil el selector suele
+  // quedar en la mitad inferior y el panel salía fuera de la pantalla: el
+  // dedo entonces desplazaba la página, no la lista.
+  const [dropUp, setDropUp] = useState(false);
 
   const selected = options.find((option) => option.value === value);
   const selectable = (index: number) =>
@@ -95,6 +103,15 @@ export function BrutalistSelect({
     const current = options.findIndex((option) => option.value === value);
     const fallback = options.findIndex((option) => option.disabled !== true);
     setActiveIndex(current >= 0 ? current : fallback);
+
+    const rect = buttonRef.current?.getBoundingClientRect();
+    if (rect !== undefined) {
+      const below = window.innerHeight - rect.bottom;
+      const above = rect.top;
+      // PANEL_MAX_HEIGHT + el margen de separación.
+      setDropUp(below < PANEL_MAX_HEIGHT + 8 && above > below);
+    }
+
     setOpen(true);
   };
 
@@ -209,6 +226,7 @@ export function BrutalistSelect({
         id={id}
         onClick={() => (open ? close() : openList())}
         onKeyDown={onKeyDown}
+        ref={buttonRef}
         role="combobox"
         type="button"
       >
@@ -234,10 +252,12 @@ export function BrutalistSelect({
         {open ? (
           <motion.ul
             animate={{ opacity: 1, y: 0 }}
-            className={`absolute z-30 top-full left-0 w-full mt-1 max-h-64 overflow-y-auto bg-surface-container-low border-[3px] shadow-[6px_6px_0px_#000000] ${tone.panel}`}
-            exit={reduced ? undefined : { opacity: 0, y: -4 }}
+            className={`absolute z-30 left-0 w-full max-h-64 overflow-y-auto overscroll-contain touch-pan-y bg-surface-container-low border-[3px] shadow-[6px_6px_0px_#000000] ${
+              dropUp ? "bottom-full mb-1" : "top-full mt-1"
+            } ${tone.panel}`}
+            exit={reduced ? undefined : { opacity: 0, y: dropUp ? 4 : -4 }}
             id={listId}
-            initial={reduced ? false : { opacity: 0, y: -4 }}
+            initial={reduced ? false : { opacity: 0, y: dropUp ? 4 : -4 }}
             ref={listRef}
             role="listbox"
             transition={{ duration: 0.12, ease: "easeOut" }}
@@ -259,13 +279,19 @@ export function BrutalistSelect({
                   data-index={index}
                   id={`${listId}-${index}`}
                   key={option.value}
-                  // `pointerdown` se adelanta al `pointerdown` que cierra la
-                  // lista desde el documento.
-                  onPointerDown={(event) => {
-                    event.preventDefault();
-                    commit(index);
-                  }}
-                  onPointerEnter={() => {
+                  // Seleccionar va en `click`, no en `pointerdown`: con
+                  // pointerdown hacía falta `preventDefault` y eso cancela el
+                  // gesto de arrastre del navegador, así que en el móvil la
+                  // lista no se podía deslizar y se elegía la opción que
+                  // quedara bajo el dedo. Con `click` el navegador ya
+                  // distingue: si hubo arrastre, no lo dispara.
+                  // No hace falta adelantarse al cierre por pointerdown del
+                  // documento: la lista está dentro de `containerRef`.
+                  onClick={() => commit(index)}
+                  // `mouseenter` y no `pointerenter`: en táctil el segundo se
+                  // dispara al apoyar el dedo y movería el resaltado al
+                  // desplazar.
+                  onMouseEnter={() => {
                     if (option.disabled !== true) setActiveIndex(index);
                   }}
                   role="option"
