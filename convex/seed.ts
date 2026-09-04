@@ -12,46 +12,68 @@ import { createAuth } from "./auth";
  */
 const WORKSHOPS = [
   {
-    name: "Introducción a Python",
-    keyword: "PYTHON AVANZADO",
-    slug: "python",
-    capacity: 25,
+    name: "Seguridad en AWS",
+    keyword: "Seg. AWS",
+    slug: "seg-aws",
+    capacity: 30,
     accent: "tertiary" as const,
   },
   {
-    name: "Ciberseguridad Básica",
-    keyword: "CIBERSEGURIDAD",
-    slug: "security",
+    name: "n8n Workshop: De la Idea a la Automatización",
+    keyword: "n8n Workshop",
+    slug: "n8n",
     capacity: 20,
     accent: "secondary" as const,
   },
   {
-    name: "Desarrollo Web",
-    keyword: "DESARROLLO WEB",
-    slug: "web",
+    name: "Networking y Entrega de Contenido",
+    keyword: "Networking",
+    slug: "networking",
+    capacity: 30,
+    accent: "primary" as const,
+  },
+  {
+    name: "Desarrollo Móvil multiplataforma con React Native",
+    keyword: "React Native",
+    slug: "movil-react-native",
     capacity: 20,
     accent: "primary" as const,
   },
   {
-    name: "Inteligencia Artificial & LLMs",
-    keyword: "IA & LLMS",
-    slug: "ia",
-    capacity: 15,
-    accent: "primary" as const,
-  },
-  {
-    name: "Bases de Datos",
-    keyword: "BASES DE DATOS",
-    slug: "db",
+    name: "Encriptación de archivos con criptografía acústica",
+    keyword: "Criptografía",
+    slug: "cripto-acustica",
     capacity: 25,
     accent: "tertiary" as const,
+  },
+  {
+    name: "Primeros pasos en SwiftUI",
+    keyword: "SwiftUI",
+    slug: "swiftui",
+    capacity: 13,
+    accent: "secondary" as const,
+  },
+  {
+    name: "Desarrollo Web con Net Core e IA",
+    keyword: "Des. Web Net Core",
+    slug: "web-netcore",
+    capacity: 20,
+    accent: "primary" as const,
   },
 ];
 
 /**
- * Idempotente: actualiza los talleres que ya existen (por slug) y crea los que
- * falten. Nunca toca `enrolled`, así que se puede re-correr sin perder cupos
- * ya asignados.
+ * Idempotente: crea los talleres que faltan, actualiza los que ya existen (por
+ * slug) y **retira los que ya no figuran en la lista**. Nunca toca `enrolled`,
+ * así que se puede re-correr sin perder cupos ya asignados.
+ *
+ * Un taller retirado se borra sólo si nadie se inscribió en él; si tiene
+ * registros se marca `active: false`, porque borrarlo dejaría esos registros
+ * apuntando a un id inexistente y `/estatus` mostraría el taller como "—".
+ *
+ * Ojo: `convex run` ejecuta la función **desplegada**, no el archivo local.
+ * Después de editar esta lista hay que publicarla (`npx convex dev`, que hace
+ * push al guardar, o `npx convex dev --once`) antes de correr el seed.
  */
 export const seedWorkshops = internalMutation({
   args: {},
@@ -86,7 +108,29 @@ export const seedWorkshops = internalMutation({
       }
     }
 
-    return { created, updated };
+    // Retirar los talleres que ya no están en la lista.
+    const wanted = new Set(WORKSHOPS.map((workshop) => workshop.slug));
+    let removed = 0;
+    let archived = 0;
+
+    for (const workshop of await ctx.db.query("workshops").collect()) {
+      if (wanted.has(workshop.slug)) continue;
+
+      const inUse = await ctx.db
+        .query("registrations")
+        .withIndex("by_workshop", (q) => q.eq("workshopId", workshop._id))
+        .first();
+
+      if (inUse === null) {
+        await ctx.db.delete(workshop._id);
+        removed += 1;
+      } else {
+        await ctx.db.patch(workshop._id, { active: false });
+        archived += 1;
+      }
+    }
+
+    return { created, updated, removed, archived };
   },
 });
 
