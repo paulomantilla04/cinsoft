@@ -1,0 +1,268 @@
+"use client";
+
+import { useEffect, useId, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+
+export type SelectOption = {
+  value: string;
+  label: string;
+  disabled?: boolean;
+};
+
+/**
+ * Selector propio con el lenguaje brutalista del diseño, en lugar del `<select>`
+ * nativo: el desplegable del sistema no se puede estilar (bordes de 3px, sombra
+ * dura, radio 0) y en cada plataforma se ve distinto.
+ *
+ * Sigue el patrón combobox de ARIA: el foco no sale del botón y la opción
+ * activa se anuncia con `aria-activedescendant`, que es más robusto que mover
+ * el foco por la lista.
+ */
+export function BrutalistSelect({
+  disabled = false,
+  hasError = false,
+  id,
+  labelledBy,
+  onBlur,
+  onChange,
+  options,
+  placeholder,
+  value,
+}: {
+  disabled?: boolean;
+  hasError?: boolean;
+  id: string;
+  labelledBy?: string;
+  onBlur?: () => void;
+  onChange: (value: string) => void;
+  options: SelectOption[];
+  placeholder: string;
+  value: string;
+}) {
+  const listId = useId();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const reduced = useReducedMotion();
+
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+
+  const selected = options.find((option) => option.value === value);
+  const selectable = (index: number) =>
+    index >= 0 && index < options.length && options[index].disabled !== true;
+
+  // Cierra al pulsar fuera. `pointerdown` y no `click` para que cierre antes de
+  // que el navegador procese la selección de otro control.
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+        onBlur?.();
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [onBlur, open]);
+
+  // Mantiene visible la opción activa al navegar con el teclado.
+  useEffect(() => {
+    if (!open || activeIndex < 0) return;
+    listRef.current
+      ?.querySelector(`[data-index="${activeIndex}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, open]);
+
+  const openList = () => {
+    if (disabled) return;
+    const current = options.findIndex((option) => option.value === value);
+    const fallback = options.findIndex((option) => option.disabled !== true);
+    setActiveIndex(current >= 0 ? current : fallback);
+    setOpen(true);
+  };
+
+  const close = () => {
+    setOpen(false);
+    onBlur?.();
+  };
+
+  const commit = (index: number) => {
+    if (!selectable(index)) return;
+    onChange(options[index].value);
+    setOpen(false);
+    onBlur?.();
+  };
+
+  /** Salta a la siguiente opción seleccionable en la dirección dada. */
+  const step = (from: number, direction: 1 | -1) => {
+    let next = from;
+    for (let i = 0; i < options.length; i += 1) {
+      next += direction;
+      if (next < 0) next = options.length - 1;
+      if (next >= options.length) next = 0;
+      if (selectable(next)) return next;
+    }
+    return from;
+  };
+
+  // Buscar escribiendo, como en un <select> nativo.
+  const typed = useRef("");
+  const typedTimer = useRef<number | undefined>(undefined);
+  const typeahead = (character: string) => {
+    window.clearTimeout(typedTimer.current);
+    typed.current += character.toLowerCase();
+    typedTimer.current = window.setTimeout(() => {
+      typed.current = "";
+    }, 600);
+    const match = options.findIndex(
+      (option) =>
+        option.disabled !== true &&
+        option.label.toLowerCase().startsWith(typed.current),
+    );
+    if (match >= 0) {
+      setActiveIndex(match);
+      if (!open) setOpen(true);
+    }
+  };
+
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    if (disabled) return;
+
+    switch (event.key) {
+      case "ArrowDown":
+      case "ArrowUp": {
+        event.preventDefault();
+        if (!open) {
+          openList();
+          return;
+        }
+        setActiveIndex((index) => step(index, event.key === "ArrowDown" ? 1 : -1));
+        return;
+      }
+      case "Home":
+      case "End": {
+        if (!open) return;
+        event.preventDefault();
+        const from = event.key === "Home" ? -1 : options.length;
+        setActiveIndex(step(from, event.key === "Home" ? 1 : -1));
+        return;
+      }
+      case "Enter":
+      case " ": {
+        event.preventDefault();
+        if (!open) {
+          openList();
+          return;
+        }
+        commit(activeIndex);
+        return;
+      }
+      case "Escape": {
+        if (!open) return;
+        event.preventDefault();
+        close();
+        return;
+      }
+      case "Tab": {
+        if (open) setOpen(false);
+        return;
+      }
+      default: {
+        if (event.key.length === 1 && !event.metaKey && !event.ctrlKey) {
+          typeahead(event.key);
+        }
+      }
+    }
+  };
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <button
+        aria-activedescendant={
+          open && activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined
+        }
+        aria-controls={listId}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-labelledby={labelledBy}
+        className={`w-full bg-surface font-body-md border-[3px] pl-4 pr-16 py-3 text-left focus:border-secondary-container focus:outline-none cursor-pointer transition-none shadow-[3px_3px_0px_#000000] disabled:opacity-60 disabled:cursor-not-allowed ${
+          hasError ? "border-secondary" : "border-on-surface-variant/40"
+        } ${selected === undefined ? "text-outline" : "text-on-surface"}`}
+        disabled={disabled}
+        id={id}
+        onClick={() => (open ? close() : openList())}
+        onKeyDown={onKeyDown}
+        role="combobox"
+        type="button"
+      >
+        <span className="block truncate">
+          {selected?.label ?? placeholder}
+        </span>
+      </button>
+
+      {/* El chevron con fondo primary del diseño; gira al abrir. */}
+      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 bg-primary text-on-primary border-l-[3px] border-surface">
+        <span
+          className={`material-symbols-outlined text-[20px] font-bold transition-transform duration-150 ${
+            open ? "rotate-180" : ""
+          }`}
+        >
+          expand_more
+        </span>
+      </div>
+
+      <AnimatePresence>
+        {open ? (
+          <motion.ul
+            animate={{ opacity: 1, y: 0 }}
+            className="absolute z-30 top-full left-0 w-full mt-1 max-h-64 overflow-y-auto bg-surface-container-low border-[3px] border-primary shadow-[6px_6px_0px_#000000]"
+            exit={reduced ? undefined : { opacity: 0, y: -4 }}
+            id={listId}
+            initial={reduced ? false : { opacity: 0, y: -4 }}
+            ref={listRef}
+            role="listbox"
+            transition={{ duration: 0.12, ease: "easeOut" }}
+          >
+            {options.map((option, index) => {
+              const isSelected = option.value === value;
+              const isActive = index === activeIndex;
+              return (
+                <li
+                  aria-disabled={option.disabled === true}
+                  aria-selected={isSelected}
+                  className={`px-4 py-3 font-body-md text-body-md border-b-2 border-surface-container-high last:border-b-0 flex items-center justify-between gap-2 ${
+                    option.disabled === true
+                      ? "text-outline cursor-not-allowed"
+                      : isActive
+                        ? "bg-primary text-on-primary cursor-pointer"
+                        : "text-on-surface cursor-pointer"
+                  }`}
+                  data-index={index}
+                  id={`${listId}-${index}`}
+                  key={option.value}
+                  // `pointerdown` se adelanta al `pointerdown` que cierra la
+                  // lista desde el documento.
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    commit(index);
+                  }}
+                  onPointerEnter={() => {
+                    if (option.disabled !== true) setActiveIndex(index);
+                  }}
+                  role="option"
+                >
+                  <span className="truncate">{option.label}</span>
+                  {isSelected ? (
+                    <span className="material-symbols-outlined text-[18px] shrink-0">
+                      check
+                    </span>
+                  ) : null}
+                </li>
+              );
+            })}
+          </motion.ul>
+        ) : null}
+      </AnimatePresence>
+    </div>
+  );
+}

@@ -3,10 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "motion/react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
+import { BrutalistSelect } from "@/components/brutalist-select";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { GROUPS, LOW_QUOTA_RATIO } from "@/lib/catalog";
@@ -47,6 +48,7 @@ export default function RegistroPage() {
         },
       };
   const {
+    control,
     register,
     handleSubmit,
     watch,
@@ -186,28 +188,26 @@ export default function RegistroPage() {
                 htmlFor="group"
                 label="4. GRUPO"
               >
-                <SelectShell>
-                  <select
-                    className={selectClass(errors.group !== undefined)}
-                    defaultValue=""
-                    disabled={isDone}
-                    id="group"
-                    {...register("group")}
-                  >
-                    <option className="bg-surface text-outline" disabled value="">
-                      &gt; SELECCIONAR GRUPO...
-                    </option>
-                    {GROUPS.map((group) => (
-                      <option
-                        className="bg-surface-container-low text-on-surface py-2"
-                        key={group}
-                        value={group}
-                      >
-                        {group}
-                      </option>
-                    ))}
-                  </select>
-                </SelectShell>
+                <Controller
+                  control={control}
+                  name="group"
+                  render={({ field }) => (
+                    <BrutalistSelect
+                      disabled={isDone}
+                      hasError={errors.group !== undefined}
+                      id="group"
+                      labelledBy="group-label"
+                      onBlur={field.onBlur}
+                      onChange={field.onChange}
+                      options={GROUPS.map((group) => ({
+                        label: group,
+                        value: group,
+                      }))}
+                      placeholder="> SELECCIONAR GRUPO..."
+                      value={field.value ?? ""}
+                    />
+                  )}
+                />
               </Field>
 
               {/* 5. TALLER */}
@@ -220,36 +220,37 @@ export default function RegistroPage() {
                   <label
                     className="font-label-caps text-label-caps text-on-surface uppercase tracking-wider"
                     htmlFor="workshop"
+                    id="workshop-label"
                   >
                     5. TALLER
                   </label>
                   <QuotaBadge workshop={selected} />
                 </div>
-                <SelectShell>
-                  <select
-                    className={selectClass(errors.workshopId !== undefined)}
-                    defaultValue=""
-                    disabled={isDone || workshops === undefined}
-                    id="workshop"
-                    {...register("workshopId")}
-                  >
-                    <option className="bg-surface text-outline" disabled value="">
-                      {workshops === undefined
-                        ? "> CARGANDO CATÁLOGO..."
-                        : "> SELECCIONAR TALLER ELECTIVO..."}
-                    </option>
-                    {workshops?.map((workshop) => (
-                      <option
-                        className="bg-surface-container-low text-on-surface py-2"
-                        disabled={workshop.isFull}
-                        key={workshop._id}
-                        value={workshop._id}
-                      >
-                        {optionLabel(workshop)}
-                      </option>
-                    ))}
-                  </select>
-                </SelectShell>
+                <Controller
+                  control={control}
+                  name="workshopId"
+                  render={({ field }) => (
+                    <BrutalistSelect
+                      disabled={isDone || workshops === undefined}
+                      hasError={errors.workshopId !== undefined}
+                      id="workshop"
+                      labelledBy="workshop-label"
+                      onBlur={field.onBlur}
+                      onChange={field.onChange}
+                      options={(workshops ?? []).map((workshop) => ({
+                        disabled: workshop.isFull,
+                        label: optionLabel(workshop),
+                        value: workshop._id,
+                      }))}
+                      placeholder={
+                        workshops === undefined
+                          ? "> CARGANDO CATÁLOGO..."
+                          : "> SELECCIONAR TALLER ELECTIVO..."
+                      }
+                      value={field.value ?? ""}
+                    />
+                  )}
+                />
                 {errors.workshopId?.message === undefined ? null : (
                   <FieldError message={errors.workshopId.message} />
                 )}
@@ -397,25 +398,6 @@ const inputClass = (hasError: boolean) =>
     hasError ? "border-secondary" : "border-on-surface-variant/40"
   }`;
 
-const selectClass = (hasError: boolean) =>
-  `w-full bg-surface text-on-surface font-body-md border-[3px] px-4 py-3 appearance-none focus:border-secondary-container focus:outline-none cursor-pointer transition-none shadow-[3px_3px_0px_#000000] disabled:opacity-60 ${
-    hasError ? "border-secondary" : "border-on-surface-variant/40"
-  }`;
-
-/** El chevron con fondo primary de los <select> del HTML. */
-function SelectShell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="relative">
-      {children}
-      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 bg-primary text-on-primary border-l-[3px] border-surface">
-        <span className="material-symbols-outlined text-[20px] font-bold">
-          expand_more
-        </span>
-      </div>
-    </div>
-  );
-}
-
 function Field({
   children,
   error,
@@ -439,6 +421,7 @@ function Field({
         <label
           className="font-label-caps text-label-caps text-on-surface uppercase tracking-wider"
           htmlFor={htmlFor}
+          id={`${htmlFor}-label`}
         >
           {label}
         </label>

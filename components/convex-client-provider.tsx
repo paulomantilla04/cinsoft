@@ -8,9 +8,12 @@ import {
 import type { ReactNode } from "react";
 import { authClient } from "@/lib/auth-client";
 
-const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!, {
-  expectAuth: true,
-});
+// Sin `expectAuth`: con esa opción el cliente espera a que haya sesión antes
+// de lanzar ninguna query, y /registro y /estatus son públicas — el catálogo
+// de talleres se quedaba en "CARGANDO CATÁLOGO..." para siempre.
+// El dashboard no lo necesita: lo protegen `proxy.ts`, `requireAdmin` y el
+// skip por `isAuthenticated` de sus propias queries.
+const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
 export function ConvexClientProvider({ children }: { children: ReactNode }) {
   return (

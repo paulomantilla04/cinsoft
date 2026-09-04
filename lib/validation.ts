@@ -25,7 +25,12 @@ export const registrationSchema = z.object({
     .max(120, "El nombre no puede exceder 120 caracteres.")
     .transform((value) => value.replace(/\s+/g, " ")),
   group: z.enum(GROUPS, { error: "Selecciona un grupo válido." }),
-  workshopId: z.string().min(1, "Selecciona un taller."),
+  // El mensaje va también en el tipo, no sólo en `.min(1)`: el selector custom
+  // arranca en `undefined` (no en cadena vacía) y sin esto Zod devolvía su
+  // error genérico en inglés.
+  workshopId: z
+    .string({ error: "Selecciona un taller." })
+    .min(1, "Selecciona un taller."),
 });
 
 export type RegistrationInput = z.infer<typeof registrationSchema>;
