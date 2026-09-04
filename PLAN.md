@@ -278,16 +278,16 @@ que siempre refleja el estado actual sin que nadie tenga que avisar.
 - Enlazada desde `/registro` y con enlace de vuelta al registro.
 - Si el alumno fue reasignado, la card muestra un aviso `REASIGNADO POR COORDINACIÓN` con la fecha del cambio, para que entienda por qué su taller es otro.
 
-## 6. Motion
+## 6. Motion — ✅ HECHO
 
 Discreto y consistente con el brutalismo (movimientos cortos y secos, nada de easing suave y largo):
 
 - **Layout:** transición de entrada por página (`fade + translateY 8px`, ~180ms).
 - **`/registro`:** stagger de los 5 bloques del formulario (~40ms entre cada uno); el banner de confirmación entra con `scale 0.96 → 1` y un pequeño desplazamiento de la sombra dura.
 - **`/login`:** shake horizontal del card cuando fallan las credenciales; badge de "ACCESO RESTRINGIDO" con el pulso que ya trae el HTML.
-- **`/dashboard`:** count-up en los números grandes de las tarjetas, stagger de filas al cambiar de filtro/página (`AnimatePresence` con `layout`), y flash verde en filas nuevas que llegan por reactividad.
+- **`/dashboard`:** count-up en los números grandes de las tarjetas, stagger de filas al cambiar de filtro/página (`AnimatePresence` con `layout`), y flash verde en filas nuevas que llegan por reactividad. Ese flash es **CSS, no Motion**: en un `<tr>` recién montado Motion no tiene color de origen y se salta los keyframes, dejando la fila en el valor final. La clase `.row-flash` de `globals.css` la neutraliza sola el bloque de `prefers-reduced-motion`.
 - **Botones:** el HTML ya resuelve el press con `active:translate` + `shadow-none`. **No reemplazar eso con Motion**, se duplica el efecto.
-- Respetar `prefers-reduced-motion` en todo lo anterior.
+- `prefers-reduced-motion` se respeta por dos vías: `useReducedMotion()` en todo lo animado con Motion, y el bloque global de `globals.css` para lo animado con CSS.
 
 ---
 
@@ -301,12 +301,21 @@ Discreto y consistente con el brutalismo (movimientos cortos y secos, nada de ea
 | **F3** ✅ | Better Auth + seed de admin por CLI + `/login` + `proxy.ts` | `login.html` ✅ |
 | **F4** ✅ | `/dashboard`: tabla, tabs, buscador, paginación, métricas, `[VER]`, `[BORRAR]`, logout | `dashboard.html` ✅ |
 | **F5** ✅ | `[MOVER]` (UI) y export CSV | F4 |
-| **F6** | Motion, estados vacíos/carga, responsive, deploy | F2–F5 |
+| **F6** ✅ | Motion, estados vacíos/carga, responsive | F2–F5 |
+| **Deploy** ⏳ | Vercel + `convex deploy` (pendiente: lo lanza Paulo) | F6 |
 
 Deploy: Vercel + `pnpm convex deploy`.
 
 - En Vercel: `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CONVEX_SITE_URL`.
 - En el deployment de Convex (`npx convex env set`): `BETTER_AUTH_SECRET`, `SITE_URL` (la URL pública de la app; en producción hay que cambiarla de `http://localhost:3000` al dominio real o el login fallará).
+
+Checklist antes de publicar:
+
+1. `pnpm build` en verde (verificado: las 7 rutas compilan y `proxy.ts` se reconoce como Middleware).
+2. `npx convex deploy` contra el deployment de producción.
+3. `npx convex env set` de `BETTER_AUTH_SECRET` (uno **nuevo**, no el de desarrollo) y `SITE_URL` con el dominio real, **en producción**.
+4. Sembrar el catálogo y el admin en producción: `seed:seedWorkshops` y `seed:createAdmin`.
+5. Sustituir el catálogo ficticio de talleres por el real (§8.2).
 
 ---
 
