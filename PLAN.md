@@ -168,12 +168,13 @@ Helper `requireAdmin(ctx)` que revisa `ctx.auth.getUserIdentity()` (o el helper 
 
 ---
 
-## 4. Auth (Better Auth + Convex), sin signup
+## 4. Auth (Better Auth + Convex), sin signup — ✅ HECHO
 
 ### 4.1 Configuración
 
 - `convex/convex.config.ts` → `app.use(betterAuth)`.
-- `convex/auth.ts` → `createAuth` con `emailAndPassword: { enabled: true }` y **`disableSignUp: true`**.
+- `convex/auth.ts` → `createAuth` con `emailAndPassword: { enabled: true, disableSignUp: true }` (`disableSignUp` va **dentro** de `emailAndPassword`, no arriba) y `baseURL`/`trustedOrigins` desde `SITE_URL`, sin lo cual Better Auth avisa y los callbacks pueden fallar.
+- `convex/auth.config.ts` → `getAuthConfigProvider()`.
 - `convex/http.ts` → `authComponent.registerRoutes(http, createAuth)`.
 - `lib/auth-server.ts` → `convexBetterAuthNextJs({ convexUrl, convexSiteUrl })` exporta `handler`, `isAuthenticated`, `fetchAuthQuery`, etc.
 - `app/api/auth/[...all]/route.ts` → `export const { GET, POST } = handler`.
@@ -188,7 +189,15 @@ Helper `requireAdmin(ctx)` que revisa `ctx.auth.getUserIdentity()` (o el helper 
 pnpm convex run seed:createAdmin '{"email":"admin@uaeh.edu.mx","password":"...","name":"Root Admin"}'
 ```
 
-Al ser `internalAction`, no es invocable desde el cliente. Con `disableSignUp: true` hay que crear el usuario por la vía interna del componente (no por el endpoint público de signup); confirmar el método exacto en la doc del componente al implementarlo.
+Al ser `internalAction`, no es invocable desde el cliente — verificado: `ConvexHttpClient` rechaza las funciones internas aunque conozca su nombre.
+
+Como `disableSignUp: true` bloquea el endpoint público, el seed usa el adaptador interno de Better Auth (`auth.$context`), que es el mismo camino que sigue el signup una vez pasada esa comprobación: hashea la contraseña, crea el usuario y enlaza la cuenta de credenciales. Valida contraseña mínima de 8 caracteres y rechaza correos duplicados.
+
+Para revocar acceso:
+
+```bash
+pnpm convex run seed:deleteAdmin '{"email":"..."}'
+```
 
 Mismo patrón para sembrar los talleres (ya implementado, idempotente: actualiza
 por `slug` y nunca toca `enrolled`, así que se puede re-correr sin perder cupos):
@@ -207,13 +216,13 @@ pnpm convex run seed:resetRegistrations
 
 - **`proxy.ts`** (⚠ en Next 16 el `middleware.ts` se renombró a `proxy.ts`, misma funcionalidad, en la raíz del proyecto): si no hay sesión → redirect a `/login`; si hay sesión y visita `/login` → redirect a `/dashboard`.
 - Además, `requireAdmin` en el backend (punto 3.3).
-- Botón de logout en el header del dashboard (el HTML tiene el bloque `AUTH_USER: SUPERADMIN_ROOT` en la barra de telemetría → ahí va el email real y el botón).
+- ✅ Botón de logout en la barra de telemetría del dashboard, junto al `AUTH_USER` real (el HTML tenía ahí el literal `SUPERADMIN_ROOT`).
 
 ---
 
 ## 5. Pantallas
 
-### 5.1 `/registro` — base `form.html`
+### 5.1 `/registro` — base `form.html` — ✅ HECHO
 
 Campos (en el orden del HTML): **1. Número de cuenta** · **2. Correo** · **3. Nombre completo** · **4. Grupo** (select 101–702) · **5. Taller** (select desde Convex).
 
@@ -224,17 +233,17 @@ Campos (en el orden del HTML): **1. Número de cuenta** · **2. Correo** · **3.
 - El esquema Zod compartido vive en `lib/validation.ts` y lo importan tanto el form como la mutation de Convex; el catálogo de grupos y accents, en `lib/catalog.ts`.
 - Submit: botón pasa a `PROCESANDO MATRÍCULA...` con el spinner `sync animate-spin`; al terminar, `REGISTRO COMPLETADO` y se revela `#statusNotification` con nombre, cuenta, taller y correo.
 - Errores del server (duplicado / cupo lleno) → variante roja del mismo banner: `⚠ REGISTRO RECHAZADO // CUENTA YA INSCRITA` etc.
-- La copia dice "Comprobante enviado a la bandeja de entrada" → o se implementa correo (Resend en una action) o se ajusta el texto. **Decisión pendiente.**
+- La copia que prometía "Comprobante enviado a la bandeja de entrada" se **ajustó**: el banner ahora dice que guardes el comprobante y remite a `/estatus`, que es reconsultable en cualquier momento. Ver §8.1 si se quiere correo real.
 - Página pública: no debe requerir sesión ni exponer datos de otros registros (la query `list` solo devuelve cupos, no nombres).
 
-### 5.2 `/login` — base `login.html`
+### 5.2 `/login` — base `login.html` — ✅ HECHO
 
 - Form con usuario/correo + contraseña, toggle `[SHOW]/[HIDE]` y checkbox "MANTENER SESIÓN".
 - Quitar los `value` hardcodeados del HTML (`sysadmin@uaeh.edu.mx`, `CINSOFT_ROOT_2024`) — son del mock.
 - El banner `#auth-error-banner` arranca oculto y aparece solo si Better Auth devuelve error. Mensaje genérico, sin distinguir "usuario no existe" de "contraseña incorrecta".
 - Botón → `ACCEDIENDO AL SISTEMA...` y luego `router.push('/dashboard')`.
 
-### 5.3 `/dashboard` — base `dashboard.html`
+### 5.3 `/dashboard` — base `dashboard.html` — ✅ HECHO (falta export CSV y `[MOVER]`)
 
 Secciones, de arriba hacia abajo:
 
@@ -244,7 +253,7 @@ Secciones, de arriba hacia abajo:
 4. **Tabs de filtro + buscador** — un tab por taller con su conteo real (`TODOS (148)`, `IA (38)`, …), estado activo `bg-secondary`. Buscador filtra por cuenta o nombre en vivo, `ESC` limpia.
 5. **Tabla** — barra de ventana tipo terminal + columnas `# · NÚMERO DE CUENTA · NOMBRE · CORREO · TALLER · GRUPO · ACCIONES`. Filas alternan `surface-container-low` / `surface-container-lowest`. El badge del taller usa `keyword` y el color de `accent`. Acciones `[VER]` (modal con la ficha completa), `[MOVER]` (selector de taller destino → `registrations.move`, que ya existe) y `[BORRAR]` (confirmación antes de la mutation).
 6. **Paginación + export** — 7 registros por página como en el HTML, texto `MOSTRANDO 1-7 DE N // PÁGINA 1 DE M`, y `EXPORTAR CSV` real (respetando el filtro/búsqueda activos).
-7. **Estado vacío** — no viene en el HTML; hay que diseñarlo en el mismo lenguaje (`NO_RECORDS_FOUND // BUFFER VACÍO`).
+7. **Estado vacío** — ✅ diseñado en el mismo lenguaje: `NO_RECORDS_FOUND // BUFFER VACÍO` cuando no hay coincidencias, y `SYNC_IN_PROGRESS // LEYENDO BUFFER` mientras carga.
 
 Todo es reactivo: al llegar un registro nuevo desde `/registro`, `useQuery` actualiza tabla y métricas solo.
 
@@ -288,19 +297,22 @@ Discreto y consistente con el brutalismo (movimientos cortos y secos, nada de ea
 |---|---|---|
 | **F0** ✅ | Proyecto, Tailwind con el theme portado, fuentes, layout con header/footer | — |
 | **F1** ✅ | Schema Convex + seed de talleres + queries/mutations de registro | — |
-| **F2** | `/registro` completo (UI + validación + mutation + estados de error) | `form.html` ✅ |
-| **F3** | Better Auth + seed de admin por CLI + `/login` + middleware | `login.html` ✅ |
-| **F4** | `/dashboard`: tabla, tabs, buscador, paginación | `dashboard.html` ✅ |
-| **F5** | Métricas, `[VER]`, `[MOVER]` (UI; la mutation ya existe), `[BORRAR]`, export CSV | F4 |
+| **F2** ✅ | `/registro` completo (UI + validación + mutation + estados de error) | `form.html` ✅ |
+| **F3** ✅ | Better Auth + seed de admin por CLI + `/login` + `proxy.ts` | `login.html` ✅ |
+| **F4** ✅ | `/dashboard`: tabla, tabs, buscador, paginación, métricas, `[VER]`, `[BORRAR]`, logout | `dashboard.html` ✅ |
+| **F5** | `[MOVER]` (UI; la mutation ya existe) y export CSV | F4 |
 | **F6** | Motion, estados vacíos/carga, responsive, deploy | F2–F5 |
 
-Deploy: Vercel + `pnpm convex deploy`. Variables: `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CONVEX_SITE_URL`, `BETTER_AUTH_SECRET`, `SITE_URL`.
+Deploy: Vercel + `pnpm convex deploy`.
+
+- En Vercel: `NEXT_PUBLIC_CONVEX_URL`, `NEXT_PUBLIC_CONVEX_SITE_URL`.
+- En el deployment de Convex (`npx convex env set`): `BETTER_AUTH_SECRET`, `SITE_URL` (la URL pública de la app; en producción hay que cambiarla de `http://localhost:3000` al dominio real o el login fallará).
 
 ---
 
 ## 8. Decisiones pendientes
 
-1. **Correo de confirmación** — ¿se implementa (Resend + action de Convex) o se ajusta el texto del banner? El HTML promete comprobante por correo.
+1. **Correo de confirmación** — por ahora **no se implementa**: el texto del banner se ajustó para no prometer correo y remitir a `/estatus`. Si se quiere el envío real, es una action de Convex con Resend disparada desde `registrations.create`.
 2. **Catálogo real de talleres** — ⏳ pendiente. Mientras tanto se siembra un **catálogo ficticio** (los 5 del HTML) desde `convex/seed.ts`; sustituirlo es un solo `pnpm convex run` cuando lleguen los datos reales.
 3. ~~**Grupos**~~ — ✅ resuelto. Catálogo definitivo: `101, 102, 301, 302, 501, 502, 701, 702`. Los `G-401` / `G-601` / `G-801` del dashboard eran datos de mock y se descartan.
 4. **Cierre de registros** — ¿un switch global para cerrar la convocatoria en cierta fecha?
