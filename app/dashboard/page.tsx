@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { ConvexError } from "convex/values";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { authClient } from "@/lib/auth-client";
 
 const PAGE_SIZE = 7;
@@ -30,6 +32,7 @@ export default function DashboardPage() {
   const workshops = useQuery(api.workshops.list, canQuery ? {} : "skip");
   const stats = useQuery(api.workshops.stats, canQuery ? {} : "skip");
   const removeRegistration = useMutation(api.registrations.remove);
+  const moveRegistration = useMutation(api.registrations.move);
 
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -47,6 +50,10 @@ export default function DashboardPage() {
     setPage(1);
   };
   const [detail, setDetail] = useState<Row | null>(null);
+  const [moveRow, setMoveRow] = useState<Row | null>(null);
+  const [exportState, setExportState] = useState<"idle" | "working" | "done">(
+    "idle",
+  );
 
   // Conteo por taller para los tabs: sobre el total, no sobre la búsqueda.
   const countsBySlug = useMemo(() => {
@@ -97,6 +104,34 @@ export default function DashboardPage() {
     if (!ok) return;
     await removeRegistration({ registrationId: row._id });
     setDetail(null);
+  };
+
+  const onMove = async (row: Row, workshopId: Id<"workshops">) => {
+    await moveRegistration({ registrationId: row._id, workshopId });
+    setMoveRow(null);
+    setDetail(null);
+  };
+
+  // El CSV se arma en el cliente con los datos ya cargados y respeta el filtro
+  // y la búsqueda activos: se exporta lo que se está viendo, no toda la tabla.
+  const onExportCsv = () => {
+    setExportState("working");
+    const csv = toCsv(filtered);
+    // El BOM hace que Excel abra los acentos correctamente.
+    const blob = new Blob([`\ufeff${csv}`], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `cinsoft-registros-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+
+    setExportState("done");
+    window.setTimeout(() => setExportState("idle"), 1800);
   };
 
   const isLoading = rows === undefined;
@@ -363,6 +398,14 @@ export default function DashboardPage() {
                             [VER]
                           </button>
                           <button
+                            className="px-2.5 py-1.5 bg-surface-container-high hover:bg-tertiary hover:text-on-tertiary text-tertiary font-label-caps text-code-badge border-2 border-tertiary shadow-[2px_2px_0px_#000] active:translate-x-0.5 active:translate-y-0.5 transition-all"
+                            onClick={() => setMoveRow(row)}
+                            title="Reasignar de taller"
+                            type="button"
+                          >
+                            [MOVER]
+                          </button>
+                          <button
                             className="px-2.5 py-1.5 bg-secondary-container/30 hover:bg-secondary-container hover:text-on-secondary-container text-secondary font-label-caps text-code-badge border-2 border-secondary shadow-[2px_2px_0px_#000] active:translate-x-0.5 active:translate-y-0.5 transition-all"
                             onClick={() => onDelete(row)}
                             title="Eliminar Registro"
@@ -446,24 +489,56 @@ export default function DashboardPage() {
             </div>
 
             <button
-              className="bg-primary text-on-primary font-label-caps text-label-caps px-space-lg py-space-sm border-4 border-black shadow-[4px_4px_0px_#000000] opacity-40 cursor-not-allowed flex items-center justify-center gap-2"
-              disabled
-              title="Disponible en F5"
+              className={`font-label-caps text-label-caps px-space-lg py-space-sm border-4 border-black shadow-[4px_4px_0px_#000000] hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[6px_6px_0px_#8cc63f] active:translate-x-[4px] active:translate-y-[4px] active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+                exportState === "idle"
+                  ? "bg-primary text-on-primary"
+                  : "bg-secondary text-on-secondary"
+              }`}
+              disabled={filtered.length === 0 || exportState !== "idle"}
+              onClick={onExportCsv}
               type="button"
             >
-              <span>EXPORTAR CSV</span>
-              <span className="material-symbols-outlined text-[18px]">
-                download
-              </span>
+              {exportState === "working" ? (
+                <>
+                  <span>GENERANDO STREAM...</span>
+                  <span className="material-symbols-outlined text-[18px] animate-spin">
+                    sync
+                  </span>
+                </>
+              ) : exportState === "done" ? (
+                <>
+                  <span>DESCARGA LISTA [OK]</span>
+                  <span className="material-symbols-outlined text-[18px]">
+                    check
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span>EXPORTAR CSV</span>
+                  <span className="material-symbols-outlined text-[18px]">
+                    download
+                  </span>
+                </>
+              )}
             </button>
           </section>
         </div>
       </div>
 
+      {moveRow === null ? null : (
+        <MoveModal
+          onClose={() => setMoveRow(null)}
+          onConfirm={(workshopId) => onMove(moveRow, workshopId)}
+          row={moveRow}
+          workshops={workshops ?? []}
+        />
+      )}
+
       {detail === null ? null : (
         <DetailModal
           onClose={() => setDetail(null)}
           onDelete={() => onDelete(detail)}
+          onMove={() => setMoveRow(detail)}
           row={detail}
         />
       )}
@@ -639,10 +714,12 @@ function EmptyState({ isLoading }: { isLoading: boolean }) {
 function DetailModal({
   onClose,
   onDelete,
+  onMove,
   row,
 }: {
   onClose: () => void;
   onDelete: () => void;
+  onMove: () => void;
   row: Row;
 }) {
   useEffect(() => {
@@ -693,7 +770,14 @@ function DetailModal({
           )}
         </dl>
 
-        <div className="px-space-lg pb-space-lg flex justify-end">
+        <div className="px-space-lg pb-space-lg flex justify-end gap-2">
+          <button
+            className="px-3 py-2 bg-surface-container-high hover:bg-tertiary hover:text-on-tertiary text-tertiary font-label-caps text-code-badge border-2 border-tertiary shadow-[2px_2px_0px_#000]"
+            onClick={onMove}
+            type="button"
+          >
+            [MOVER DE TALLER]
+          </button>
           <button
             className="px-3 py-2 bg-secondary-container/30 hover:bg-secondary-container hover:text-on-secondary-container text-secondary font-label-caps text-code-badge border-2 border-secondary shadow-[2px_2px_0px_#000]"
             onClick={onDelete}
@@ -726,4 +810,200 @@ function formatTimestamp(timestamp: number) {
     timeStyle: "short",
     timeZone: "America/Mexico_City",
   }).format(timestamp);
+}
+
+type Workshop = NonNullable<
+  ReturnType<typeof useQuery<typeof api.workshops.list>>
+>[number];
+
+/** Selector de taller destino para el botón [MOVER]. Sin mock: mismo lenguaje. */
+function MoveModal({
+  onClose,
+  onConfirm,
+  row,
+  workshops,
+}: {
+  onClose: () => void;
+  onConfirm: (workshopId: Id<"workshops">) => Promise<void>;
+  row: Row;
+  workshops: Workshop[];
+}) {
+  const [target, setTarget] = useState("");
+  const [isMoving, setIsMoving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // No tiene sentido ofrecer el taller en el que ya está.
+  const options = workshops.filter(
+    (workshop) => workshop.keyword !== row.workshop.keyword,
+  );
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  const submit = async () => {
+    if (target === "") return;
+    setIsMoving(true);
+    setError(null);
+    try {
+      await onConfirm(target as Id<"workshops">);
+    } catch (caught) {
+      const data = caught instanceof ConvexError ? caught.data : null;
+      setError(data?.message ?? "No se pudo reasignar el registro.");
+      setIsMoving(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] bg-black/70 flex items-center justify-center p-margin-mobile"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-[520px] bg-surface-container-low border-4 border-tertiary shadow-[8px_8px_0px_#000000]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="bg-surface-container-high border-b-4 border-tertiary px-space-md py-space-xs flex items-center justify-between">
+          <span className="font-code-badge text-code-badge text-on-surface-variant font-bold uppercase">
+            REASSIGN://{row.accountNumber}
+          </span>
+          <button
+            className="font-code-badge text-code-badge text-secondary border border-secondary px-2 py-0.5 hover:bg-secondary-container hover:text-on-secondary-container"
+            onClick={onClose}
+            type="button"
+          >
+            [ESC]
+          </button>
+        </div>
+
+        <div className="p-space-lg flex flex-col gap-space-md">
+          <div className="flex flex-col gap-space-2xs">
+            <span className="font-code-badge text-code-badge text-on-surface-variant uppercase">
+              ALUMNO
+            </span>
+            <span className="font-body-md text-body-md text-on-surface font-bold uppercase">
+              {row.fullName} ({row.accountNumber})
+            </span>
+            <span className="font-code-badge text-code-badge text-on-surface-variant mt-space-2xs">
+              TALLER ACTUAL: {row.workshop.keyword}
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-space-2xs">
+            <label
+              className="font-label-caps text-label-caps text-on-surface uppercase tracking-wider"
+              htmlFor="move-target"
+            >
+              TALLER DESTINO
+            </label>
+            <div className="relative">
+              <select
+                className="w-full bg-surface text-on-surface font-body-md border-[3px] border-on-surface-variant/40 px-4 py-3 appearance-none focus:border-tertiary focus:outline-none cursor-pointer transition-none shadow-[3px_3px_0px_#000000]"
+                disabled={isMoving}
+                id="move-target"
+                onChange={(event) => setTarget(event.target.value)}
+                value={target}
+              >
+                <option className="bg-surface text-outline" disabled value="">
+                  &gt; SELECCIONAR TALLER DESTINO...
+                </option>
+                {options.map((workshop) => (
+                  <option
+                    className="bg-surface-container-low text-on-surface py-2"
+                    disabled={workshop.isFull}
+                    key={workshop._id}
+                    value={workshop._id}
+                  >
+                    {workshop.isFull
+                      ? `${workshop.name} (CUPO LLENO)`
+                      : `${workshop.name} (${workshop.remaining} cupos disp.)`}
+                  </option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 bg-tertiary text-on-tertiary border-l-[3px] border-surface">
+                <span className="material-symbols-outlined text-[20px] font-bold">
+                  expand_more
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {error === null ? null : (
+            <div className="flex items-start gap-2 border-2 border-secondary bg-surface-container-high p-space-sm">
+              <span className="material-symbols-outlined text-secondary text-[18px]">
+                warning
+              </span>
+              <span className="font-body-sm text-body-sm text-on-surface">
+                {error}
+              </span>
+            </div>
+          )}
+
+          <button
+            className="w-full bg-tertiary text-on-tertiary font-label-caps text-label-caps py-3 border-[3px] border-black shadow-[4px_4px_0px_#000000] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_#000000] active:translate-x-[4px] active:translate-y-[4px] active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={target === "" || isMoving}
+            onClick={submit}
+            type="button"
+          >
+            {isMoving ? (
+              <>
+                <span className="material-symbols-outlined animate-spin text-[18px]">
+                  sync
+                </span>
+                <span>REASIGNANDO...</span>
+              </>
+            ) : (
+              <>
+                <span>CONFIRMAR REASIGNACIÓN</span>
+                <span className="material-symbols-outlined text-[18px]">
+                  swap_horiz
+                </span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const CSV_HEADERS = [
+  "NUMERO DE CUENTA",
+  "NOMBRE",
+  "CORREO",
+  "TALLER",
+  "GRUPO",
+  "REGISTRADO",
+  "REASIGNADO",
+];
+
+/** Entrecomilla siempre: los nombres pueden traer comas y el CSV se rompería. */
+function csvCell(value: string) {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+function toCsv(rows: Row[]) {
+  const lines = [CSV_HEADERS.map(csvCell).join(",")];
+  for (const row of rows) {
+    lines.push(
+      [
+        row.accountNumber,
+        row.fullName,
+        row.email,
+        row.workshop.keyword,
+        `G-${row.group}`,
+        formatTimestamp(row._creationTime),
+        row.reassignedAt === undefined
+          ? ""
+          : formatTimestamp(row.reassignedAt),
+      ]
+        .map(csvCell)
+        .join(","),
+    );
+  }
+  return lines.join("\r\n");
 }
