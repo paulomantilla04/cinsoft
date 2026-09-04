@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { motion, useReducedMotion } from "motion/react";
 import { Controller, useForm } from "react-hook-form";
@@ -8,6 +9,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
 import { BrutalistSelect } from "@/components/brutalist-select";
+import logoCinsoft from "@/public/logo-cinsoft.png";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { GROUPS, LOW_QUOTA_RATIO } from "@/lib/catalog";
@@ -89,14 +91,24 @@ export default function RegistroPage() {
         <div className="w-full max-w-155 flex flex-col items-center">
           {/* HEADER BLOCK */}
           <div className="w-full text-center mb-space-lg select-none">
-            <div className="inline-block relative">
-              <h1 className="font-display-hero text-display-hero-mobile sm:text-display-hero text-primary tracking-tighter uppercase inline-block drop-shadow-[4px_4px_0px_#000000]">
-                CINS<span className="text-secondary-container">{"{ }"}</span>FT
-              </h1>
-              <div className="absolute -top-3 -right-6 px-1.5 py-0.5 bg-secondary-container text-on-secondary font-code-badge text-code-badge tracking-widest uppercase border-2 border-black rotate-6">
-                v2026
-              </div>
-            </div>
+            {/* El logo sustituye al wordmark de texto y ya trae "6ta. edición",
+                así que el badge "v2026" que lo acompañaba sobraba. Import
+                estático: Next conoce las dimensiones y reserva el hueco, sin
+                salto de maquetación al cargar. */}
+            <h1 className="m-0">
+              <Image
+                alt="CINSOFT — 6ta edición"
+                // El brazo robótico se corta en seco contra el borde superior.
+                // Se difumina con una máscara sobre la propia imagen y no con
+                // una capa opaca encima: así el fondo de puntos sigue viéndose
+                // a través. El degradado acaba al 20%, justo antes de donde
+                // empieza el badge "6ta. edición".
+                className="w-full max-w-105 h-auto mx-auto [mask-image:linear-gradient(to_bottom,transparent_0%,#000_20%)] [-webkit-mask-image:linear-gradient(to_bottom,transparent_0%,#000_20%)]"
+                priority
+                sizes="(max-width: 640px) 85vw, 420px"
+                src={logoCinsoft}
+              />
+            </h1>
             <p className="font-label-caps text-label-caps text-on-surface-variant tracking-[0.25em] uppercase mt-space-2xs">
               REGISTRO A TALLERES
             </p>
