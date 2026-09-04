@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation, useQuery } from "convex/react";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { authClient } from "@/lib/auth-client";
 
@@ -16,9 +16,19 @@ type Row = NonNullable<
 export default function DashboardPage() {
   const router = useRouter();
   const session = authClient.useSession();
-  const rows = useQuery(api.registrations.listAll, {});
-  const workshops = useQuery(api.workshops.list, {});
-  const stats = useQuery(api.workshops.stats, {});
+  const { isAuthenticated } = useConvexAuth();
+  const [isSigningOut, setIsSigningOut] = useState(false);
+
+  // Las queries protegidas sólo se suscriben con sesión viva. Sin esto, al
+  // cerrar sesión el dashboard sigue montado un instante con sus
+  // suscripciones abiertas, Convex las re-ejecuta ya sin identidad y
+  // `requireAdmin` lanza UNAUTHORIZED. `isSigningOut` corta la suscripción
+  // antes de invalidar el token; `isAuthenticated` cubre además la expiración
+  // de la sesión y el arranque, cuando el token todavía no se ha resuelto.
+  const canQuery = isAuthenticated && !isSigningOut;
+  const rows = useQuery(api.registrations.listAll, canQuery ? {} : "skip");
+  const workshops = useQuery(api.workshops.list, canQuery ? {} : "skip");
+  const stats = useQuery(api.workshops.stats, canQuery ? {} : "skip");
   const removeRegistration = useMutation(api.registrations.remove);
 
   const [filter, setFilter] = useState("all");
@@ -75,6 +85,7 @@ export default function DashboardPage() {
   }, []);
 
   const onSignOut = async () => {
+    setIsSigningOut(true);
     await authClient.signOut();
     router.push("/login");
   };
