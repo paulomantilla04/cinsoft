@@ -1,4 +1,6 @@
-import { internalMutation } from "./_generated/server";
+import { v } from "convex/values";
+import { internalAction, internalMutation } from "./_generated/server";
+import { createAuth } from "./auth";
 
 /**
  * Catálogo FICTICIO de arranque (PLAN §8.2). Sustituir por el real en cuanto
@@ -108,5 +110,78 @@ export const resetRegistrations = internalMutation({
     }
 
     return { deleted: registrations.length };
+  },
+});
+
+/**
+ * Crea un administrador. `internalAction`, así que no es invocable desde el
+ * cliente; sólo por CLI:
+ *
+ *     pnpm convex run seed:createAdmin '{"email":"...","password":"...","name":"..."}'
+ *
+ * No usa el endpoint público de signup porque `disableSignUp: true` lo bloquea
+ * a propósito. En su lugar usa el adaptador interno de Better Auth, que es el
+ * mismo camino que sigue el signup una vez pasada esa comprobación: hashea la
+ * contraseña, crea el usuario y enlaza la cuenta de credenciales.
+ */
+export const createAdmin = internalAction({
+  args: {
+    email: v.string(),
+    password: v.string(),
+    name: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const email = args.email.trim().toLowerCase();
+    if (args.password.length < 8) {
+      throw new Error("La contraseña debe tener al menos 8 caracteres.");
+    }
+
+    const auth = createAuth(ctx);
+    const authCtx = await auth.$context;
+
+    const existing = await authCtx.internalAdapter.findUserByEmail(email);
+    if (existing !== null) {
+      throw new Error(`Ya existe un usuario con el correo ${email}.`);
+    }
+
+    const hash = await authCtx.password.hash(args.password);
+    const user = await authCtx.internalAdapter.createUser({
+      email,
+      name: args.name,
+      emailVerified: true,
+    });
+    await authCtx.internalAdapter.linkAccount({
+      userId: user.id,
+      providerId: "credential",
+      accountId: user.id,
+      password: hash,
+    });
+
+    return { userId: user.id, email };
+  },
+});
+
+/**
+ * Da de baja a un administrador (borra usuario, cuentas y sesiones en cascada).
+ * `internalAction`, sólo por CLI:
+ *
+ *     pnpm convex run seed:deleteAdmin '{"email":"..."}'
+ */
+export const deleteAdmin = internalAction({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    const email = args.email.trim().toLowerCase();
+    const auth = createAuth(ctx);
+    const authCtx = await auth.$context;
+
+    const user = await authCtx.internalAdapter.findUserByEmail(email);
+    if (user === null) {
+      throw new Error(`No existe un usuario con el correo ${email}.`);
+    }
+
+    // deleteUser ya borra sesiones y cuentas en cascada.
+    await authCtx.internalAdapter.deleteUser(user.user.id);
+
+    return { deleted: email };
   },
 });

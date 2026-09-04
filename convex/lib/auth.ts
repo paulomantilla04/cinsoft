@@ -1,5 +1,6 @@
 import { ConvexError } from "convex/values";
 import type { QueryCtx, MutationCtx } from "../_generated/server";
+import { authComponent } from "../auth";
 
 /**
  * Guard de autorización para todo lo que toca datos de alumnos.
@@ -7,16 +8,16 @@ import type { QueryCtx, MutationCtx } from "../_generated/server";
  * Proteger las rutas en Next NO basta: las queries de Convex son accesibles
  * desde fuera de la app. Este guard es la frontera real.
  *
- * F3 lo refinará para usar el helper del componente de Better Auth; por ahora
- * exige una identidad autenticada, que es lo que ese componente provee.
+ * Como no hay registro público (`disableSignUp`), toda sesión válida pertenece
+ * a un admin sembrado por CLI, así que basta con exigir usuario autenticado.
  */
 export async function requireAdmin(ctx: QueryCtx | MutationCtx) {
-  const identity = await ctx.auth.getUserIdentity();
-  if (identity === null) {
+  const user = await authComponent.safeGetAuthUser(ctx);
+  if (user === undefined || user === null) {
     throw new ConvexError({
       code: "UNAUTHORIZED",
       message: "SESIÓN NO AUTORIZADA",
     });
   }
-  return identity;
+  return user;
 }
