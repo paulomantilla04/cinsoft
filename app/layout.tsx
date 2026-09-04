@@ -33,7 +33,7 @@ const materialSymbols = localFont({
 const SITE_URL = "https://cinsoft.vercel.app";
 const TITLE = "CINSOFT 2026 // Registro a Talleres";
 const DESCRIPTION =
-  "Registro a talleres del congreso CINSOFT 2026 — Facultad de Ingeniería en Computación & Telemática.";
+  "Registro a talleres del congreso CINSOFT 2026 — Escuela Superior de Tlahuelilpan";
 
 export const metadata: Metadata = {
   // Sin `metadataBase` las URLs de Open Graph salen relativas y las redes no
