@@ -1,26 +1,241 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ===========================================================================
+   DESIGN SYSTEM — portado 1:1 del bloque `tailwind.config` de design/*.html
+   Tailwind v4: el config vive aquí como @theme en vez de tailwind.config.ts
+   =========================================================================== */
+@theme {
+  /* --- COLORES (Material-ish, dark-only) --- */
+  --color-primary: #a6e358;
+  --color-on-primary: #203700;
+  --color-primary-container: #8cc63f;
+  --color-on-primary-container: #304f00;
+  --color-primary-fixed: #b7f568;
+  --color-primary-fixed-dim: #9cd84f;
+  --color-on-primary-fixed: #102000;
+  --color-on-primary-fixed-variant: #304f00;
+  --color-inverse-primary: #416900;
+
+  --color-secondary: #ffb4a6;
+  --color-on-secondary: #660800;
+  --color-secondary-container: #aa1400;
+  --color-on-secondary-container: #ffb9ab;
+  --color-secondary-fixed: #ffdad3;
+  --color-secondary-fixed-dim: #ffb4a6;
+  --color-on-secondary-fixed: #3f0300;
+  --color-on-secondary-fixed-variant: #8f0f00;
+
+  --color-tertiary: #c4d2e7;
+  --color-on-tertiary: #243141;
+  --color-tertiary-container: #a9b7cb;
+  --color-on-tertiary-container: #3a4859;
+  --color-tertiary-fixed: #d5e4f8;
+  --color-tertiary-fixed-dim: #b9c8dc;
+  --color-on-tertiary-fixed: #0e1d2b;
+  --color-on-tertiary-fixed-variant: #3a4858;
+
+  --color-error: #ffb4ab;
+  --color-on-error: #690005;
+  --color-error-container: #93000a;
+  --color-on-error-container: #ffdad6;
+
+  --color-background: #0a1420;
+  --color-on-background: #d9e3f4;
+  --color-surface: #0a1420;
+  --color-on-surface: #d9e3f4;
+  --color-surface-dim: #0a1420;
+  --color-surface-bright: #303a47;
+  --color-surface-variant: #2c3543;
+  --color-on-surface-variant: #c2c9b3;
+  --color-surface-container-lowest: #050f1b;
+  --color-surface-container-low: #121c28;
+  --color-surface-container: #17202d;
+  --color-surface-container-high: #212b37;
+  --color-surface-container-highest: #2c3543;
+  --color-surface-tint: #9cd84f;
+  --color-inverse-surface: #d9e3f4;
+  --color-inverse-on-surface: #27313e;
+
+  --color-outline: #8c937f;
+  --color-outline-variant: #424938;
+
+  /* --- BORDER RADIUS: brutalismo, todo a 0 (full se mantiene) --- */
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-4xl: 0px;
+
+  /* --- SPACING --- */
+  --spacing-space-2xs: 0.25rem;
+  --spacing-space-xs: 0.5rem;
+  --spacing-space-sm: 0.75rem;
+  --spacing-space-md: 1rem;
+  --spacing-space-lg: 1.5rem;
+  --spacing-space-xl: 2rem;
+  --spacing-space-2xl: 3rem;
+  --spacing-space-3xl: 4rem;
+  --spacing-gutter-mobile: 1rem;
+  --spacing-gutter-desktop: 1.5rem;
+  --spacing-margin-mobile: 1rem;
+  --spacing-margin-desktop: 2.5rem;
+
+  /* --- FONT FAMILIES --- */
+  --font-display-hero: var(--font-space-grotesk), sans-serif;
+  --font-display-hero-mobile: var(--font-space-grotesk), sans-serif;
+  --font-headline-lg: var(--font-space-grotesk), sans-serif;
+  --font-headline-lg-mobile: var(--font-space-grotesk), sans-serif;
+  --font-headline-md: var(--font-space-grotesk), sans-serif;
+  --font-headline-sm: var(--font-space-grotesk), sans-serif;
+  --font-label-caps: var(--font-jetbrains-mono), monospace;
+  --font-code-badge: var(--font-jetbrains-mono), monospace;
+  --font-body-lg: var(--font-jetbrains-mono), monospace;
+  --font-body-md: var(--font-jetbrains-mono), monospace;
+  --font-body-sm: var(--font-jetbrains-mono), monospace;
+
+  /* --- FONT SIZES (con lineHeight / letterSpacing / fontWeight) --- */
+  --text-display-hero: 64px;
+  --text-display-hero--line-height: 68px;
+  --text-display-hero--letter-spacing: -0.04em;
+  --text-display-hero--font-weight: 700;
+
+  --text-display-hero-mobile: 38px;
+  --text-display-hero-mobile--line-height: 42px;
+  --text-display-hero-mobile--letter-spacing: -0.03em;
+  --text-display-hero-mobile--font-weight: 700;
+
+  --text-headline-lg: 40px;
+  --text-headline-lg--line-height: 46px;
+  --text-headline-lg--letter-spacing: -0.02em;
+  --text-headline-lg--font-weight: 700;
+
+  --text-headline-lg-mobile: 28px;
+  --text-headline-lg-mobile--line-height: 34px;
+  --text-headline-lg-mobile--letter-spacing: -0.02em;
+  --text-headline-lg-mobile--font-weight: 700;
+
+  --text-headline-md: 24px;
+  --text-headline-md--line-height: 30px;
+  --text-headline-md--letter-spacing: -0.01em;
+  --text-headline-md--font-weight: 700;
+
+  --text-headline-sm: 18px;
+  --text-headline-sm--line-height: 24px;
+  --text-headline-sm--letter-spacing: 0em;
+  --text-headline-sm--font-weight: 700;
+
+  --text-body-lg: 16px;
+  --text-body-lg--line-height: 24px;
+  --text-body-lg--letter-spacing: 0.02em;
+  --text-body-lg--font-weight: 400;
+
+  --text-body-md: 14px;
+  --text-body-md--line-height: 20px;
+  --text-body-md--letter-spacing: 0.01em;
+  --text-body-md--font-weight: 400;
+
+  --text-body-sm: 12px;
+  --text-body-sm--line-height: 18px;
+  --text-body-sm--letter-spacing: 0.02em;
+  --text-body-sm--font-weight: 400;
+
+  --text-label-caps: 13px;
+  --text-label-caps--line-height: 16px;
+  --text-label-caps--letter-spacing: 0.1em;
+  --text-label-caps--font-weight: 700;
+
+  --text-code-badge: 11px;
+  --text-code-badge--line-height: 14px;
+  --text-code-badge--letter-spacing: 0.08em;
+  --text-code-badge--font-weight: 700;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+/* ===========================================================================
+   BASE — equivalente al <style> inline de los HTML de diseño
+   =========================================================================== */
+@layer base {
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+  }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  html {
+    /* Hace que <select>/<option> nativos se pinten oscuros como en el mock */
+    color-scheme: dark;
+  }
+
+  body {
+    overscroll-behavior: none;
+  }
+
+  main > :first-child {
+    margin-top: 0 !important;
+  }
+
+  main > :last-child {
+    margin-bottom: 0 !important;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Definida aquí (no vía el CSS de Google) para que viva en @layer base y las
+   utilities de Tailwind puedan sobreescribir tamaño y color de los iconos. */
+@layer base {
+  .material-symbols-outlined {
+    font-family: var(--font-material-symbols), sans-serif;
+    font-weight: normal;
+    font-style: normal;
+    font-size: 24px;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    display: inline-block;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    font-feature-settings: "liga";
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+::-webkit-scrollbar {
+  display: none;
+}
+
+/* Flash de las filas que llegan por reactividad al dashboard. Va en CSS y no
+   en Motion porque en un elemento recién montado Motion no tiene color de
+   origen y se salta los keyframes. El bloque de prefers-reduced-motion de
+   abajo la neutraliza sola. */
+@keyframes row-flash {
+  0% {
+    background-color: rgba(166, 227, 88, 0);
+  }
+  12% {
+    background-color: rgba(166, 227, 88, 0.35);
+  }
+  100% {
+    background-color: rgba(166, 227, 88, 0);
+  }
+}
+
+.row-flash {
+  animation: row-flash 1.2s ease-out;
+}
+
+.bg-dot-matrix {
+  background-image: radial-gradient(#1e354d 1.5px, transparent 1.5px);
+  background-size: 24px 24px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
