@@ -64,6 +64,7 @@ export default function DashboardPage() {
   const [exportState, setExportState] = useState<"idle" | "working" | "done">(
     "idle",
   );
+  const [exportError, setExportError] = useState<string | null>(null);
 
   // Conteo por taller para los tabs: sobre el total, no sobre la búsqueda.
   const countsBySlug = useMemo(() => {
@@ -86,6 +87,17 @@ export default function DashboardPage() {
       return matchesFilter && matchesSearch;
     });
   }, [rows, filter, search]);
+
+  // Con un taller filtrado la exportación cambia de CSV a lista de asistencia.
+  const selectedWorkshop = workshops?.find(
+    (workshop) => workshop.slug === filter,
+  );
+
+  const isAttendanceMode = selectedWorkshop !== undefined;
+  // Cuenta sobre el taller completo, que es lo que se exporta.
+  const attendanceCount = (rows ?? []).filter(
+    (row) => row.workshop.slug === filter,
+  ).length;
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
@@ -131,23 +143,65 @@ export default function DashboardPage() {
   // El CSV se arma en el cliente con los datos ya cargados y respeta el filtro
   // y la búsqueda activos: se exporta lo que se está viendo, no toda la tabla.
   const onExportCsv = () => {
+    setExportError(null);
     setExportState("working");
     const csv = toCsv(filtered);
     // El BOM hace que Excel abra los acentos correctamente.
     const blob = new Blob([`\ufeff${csv}`], {
       type: "text/csv;charset=utf-8;",
     });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `cinsoft-registros-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+    download(
+      blob,
+      `cinsoft-registros-${new Date().toISOString().slice(0, 10)}.csv`,
+    );
 
     setExportState("done");
     window.setTimeout(() => setExportState("idle"), 1800);
+  };
+
+  /**
+   * Lista de asistencia del taller filtrado, sobre el membrete institucional.
+   *
+   * Toma **todos** los inscritos del taller y no `filtered`: si respetara la
+   * búsqueda, una consulta olvidada produciría una lista incompleta con la que
+   * se pasaría asistencia, y los que faltaran parecerían no inscritos.
+   */
+  const onExportAttendance = async () => {
+    if (selectedWorkshop === undefined) return;
+    setExportError(null);
+    setExportState("working");
+    try {
+      const sheetRows = (rows ?? [])
+        .filter((row) => row.workshop.slug === selectedWorkshop.slug)
+        // Alfabético: es el orden con el que se pasa lista, no el de registro.
+        .sort((a, b) => a.fullName.localeCompare(b.fullName, "es"))
+        .map((row) => ({
+          accountNumber: row.accountNumber,
+          fullName: row.fullName,
+          group: row.group,
+        }));
+
+      const response = await fetch("/plantilla.pdf");
+      if (!response.ok) {
+        throw new Error("No se pudo cargar la plantilla institucional.");
+      }
+
+      // Carga diferida: pdf-lib sólo se descarga al exportar, y nunca en las
+      // pantallas públicas.
+      const { buildAttendanceSheet } = await import("@/lib/attendance-sheet");
+      const blob = await buildAttendanceSheet({
+        rows: sheetRows,
+        template: await response.arrayBuffer(),
+        workshopName: selectedWorkshop.name,
+      });
+      download(blob, `lista-asistencia-${selectedWorkshop.slug}.pdf`);
+
+      setExportState("done");
+      window.setTimeout(() => setExportState("idle"), 1800);
+    } catch {
+      setExportError("No se pudo generar la lista. Intenta de nuevo.");
+      setExportState("idle");
+    }
   };
 
   // Filas que llegaron por reactividad después de la carga inicial: se marcan
@@ -534,39 +588,70 @@ export default function DashboardPage() {
               />
             </div>
 
-            <button
-              className={`font-label-caps text-label-caps px-space-lg py-space-sm border-4 border-black shadow-[4px_4px_0px_#000000] hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[6px_6px_0px_#8cc63f] active:translate-x-[4px] active:translate-y-[4px] active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed ${
-                exportState === "idle"
-                  ? "bg-primary text-on-primary"
-                  : "bg-secondary text-on-secondary"
-              }`}
-              disabled={filtered.length === 0 || exportState !== "idle"}
-              onClick={onExportCsv}
-              type="button"
-            >
-              {exportState === "working" ? (
-                <>
-                  <span>GENERANDO STREAM...</span>
-                  <span className="material-symbols-outlined text-[18px] animate-spin">
-                    sync
+            <div className="flex flex-col items-stretch sm:items-end gap-space-2xs">
+              <button
+                className={`font-label-caps text-label-caps px-space-lg py-space-sm border-4 border-black shadow-[4px_4px_0px_#000000] hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[6px_6px_0px_#8cc63f] active:translate-x-[4px] active:translate-y-[4px] active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+                  exportState === "idle"
+                    ? "bg-primary text-on-primary"
+                    : "bg-secondary text-on-secondary"
+                }`}
+                disabled={
+                  exportState !== "idle" ||
+                  (isAttendanceMode
+                    ? attendanceCount === 0
+                    : filtered.length === 0)
+                }
+                onClick={isAttendanceMode ? onExportAttendance : onExportCsv}
+                title={
+                  isAttendanceMode
+                    ? `Lista de asistencia de ${selectedWorkshop?.name} para imprimir`
+                    : "Exporta lo que se está viendo, con el filtro y la búsqueda activos"
+                }
+                type="button"
+              >
+                {exportState === "working" ? (
+                  <>
+                    <span>GENERANDO STREAM...</span>
+                    <span className="material-symbols-outlined text-[18px] animate-spin">
+                      sync
+                    </span>
+                  </>
+                ) : exportState === "done" ? (
+                  <>
+                    <span>DESCARGA LISTA [OK]</span>
+                    <span className="material-symbols-outlined text-[18px]">
+                      check
+                    </span>
+                  </>
+                ) : isAttendanceMode ? (
+                  <>
+                    <span>EXPORTAR LISTA</span>
+                    <span className="material-symbols-outlined text-[18px]">
+                      print
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span>EXPORTAR CSV</span>
+                    <span className="material-symbols-outlined text-[18px]">
+                      download
+                    </span>
+                  </>
+                )}
+              </button>
+
+              {exportError === null ? (
+                isAttendanceMode ? (
+                  <span className="font-code-badge text-code-badge text-on-surface-variant uppercase text-right">
+                    {attendanceCount} INSCRITOS // PDF PARA IMPRIMIR
                   </span>
-                </>
-              ) : exportState === "done" ? (
-                <>
-                  <span>DESCARGA LISTA [OK]</span>
-                  <span className="material-symbols-outlined text-[18px]">
-                    check
-                  </span>
-                </>
+                ) : null
               ) : (
-                <>
-                  <span>EXPORTAR CSV</span>
-                  <span className="material-symbols-outlined text-[18px]">
-                    download
-                  </span>
-                </>
+                <span className="font-code-badge text-code-badge text-secondary uppercase text-right">
+                  ⚠ {exportError}
+                </span>
               )}
-            </button>
+            </div>
           </section>
         </div>
       </div>
@@ -606,6 +691,18 @@ export default function DashboardPage() {
 }
 
 const pad2 = (value: number) => String(value).padStart(2, "0");
+
+/** Dispara la descarga de un blob generado en el cliente. */
+function download(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
 
 const ACCENT_CLASSES = {
   primary: "text-primary border-primary",
