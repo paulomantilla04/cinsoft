@@ -13,6 +13,7 @@ import { ConvexError } from "convex/values";
 import { BrutalistSelect } from "@/components/brutalist-select";
 import { Modal, ModalHeader } from "@/components/modal";
 import { api } from "@/convex/_generated/api";
+import { GROUPS } from "@/lib/catalog";
 import type { Id } from "@/convex/_generated/dataModel";
 import { authClient } from "@/lib/auth-client";
 
@@ -44,6 +45,7 @@ export default function DashboardPage() {
   const moveRegistration = useMutation(api.registrations.move);
 
   const [filter, setFilter] = useState("all");
+  const [groupFilter, setGroupFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
 
@@ -54,6 +56,10 @@ export default function DashboardPage() {
     setFilter(slug);
     setPage(1);
   };
+  const changeGroup = (group: string) => {
+    setGroupFilter(group);
+    setPage(1);
+  };
   const changeSearch = (term: string) => {
     setSearch(term);
     setPage(1);
@@ -61,9 +67,12 @@ export default function DashboardPage() {
   const [detail, setDetail] = useState<Row | null>(null);
   const [moveRow, setMoveRow] = useState<Row | null>(null);
   const [deleteRow, setDeleteRow] = useState<Row | null>(null);
-  const [exportState, setExportState] = useState<"idle" | "working" | "done">(
-    "idle",
-  );
+  // Con el filtro "todos" conviven dos botones, así que el estado guarda cuál
+  // está trabajando y no sólo que algo lo está.
+  const [exportJob, setExportJob] = useState<{
+    kind: "csv" | "sheet";
+    state: "working" | "done";
+  } | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
 
   // Conteo por taller para los tabs: sobre el total, no sobre la búsqueda.
@@ -75,18 +84,31 @@ export default function DashboardPage() {
     return counts;
   }, [rows]);
 
+  // Los conteos por grupo se calculan dentro del taller activo: al mirar un
+  // taller interesa cuántos de *ese* taller son de cada grupo.
+  const countsByGroup = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const row of rows ?? []) {
+      if (filter !== "all" && row.workshop.slug !== filter) continue;
+      counts.set(row.group, (counts.get(row.group) ?? 0) + 1);
+    }
+    return counts;
+  }, [rows, filter]);
+
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return (rows ?? []).filter((row) => {
       const matchesFilter =
         filter === "all" || row.workshop.slug === filter;
+      const matchesGroup =
+        groupFilter === "all" || row.group === groupFilter;
       const matchesSearch =
         term === "" ||
         row.accountNumber.toLowerCase().includes(term) ||
         row.fullName.toLowerCase().includes(term);
-      return matchesFilter && matchesSearch;
+      return matchesFilter && matchesGroup && matchesSearch;
     });
-  }, [rows, filter, search]);
+  }, [rows, filter, groupFilter, search]);
 
   // Con un taller filtrado la exportación cambia de CSV a lista de asistencia.
   const selectedWorkshop = workshops?.find(
@@ -94,10 +116,19 @@ export default function DashboardPage() {
   );
 
   const isAttendanceMode = selectedWorkshop !== undefined;
-  // Cuenta sobre el taller completo, que es lo que se exporta.
-  const attendanceCount = (rows ?? []).filter(
-    (row) => row.workshop.slug === filter,
-  ).length;
+  // Lo que entraría en la lista: el taller filtrado, o todos, acotado al grupo.
+  const attendanceRows = (rows ?? []).filter(
+    (row) =>
+      (filter === "all" || row.workshop.slug === filter) &&
+      (groupFilter === "all" || row.group === groupFilter),
+  );
+  const attendanceCount = attendanceRows.length;
+  // Secciones que aportarían al menos una hoja: talleres o grupos según el modo.
+  const attendanceSectionCount = new Set(
+    attendanceRows.map((row) =>
+      isAttendanceMode ? row.workshop.slug : row.group,
+    ),
+  ).size;
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
@@ -144,7 +175,7 @@ export default function DashboardPage() {
   // y la búsqueda activos: se exporta lo que se está viendo, no toda la tabla.
   const onExportCsv = () => {
     setExportError(null);
-    setExportState("working");
+    setExportJob({ kind: "csv", state: "working" });
     const csv = toCsv(filtered);
     // El BOM hace que Excel abra los acentos correctamente.
     const blob = new Blob([`\ufeff${csv}`], {
@@ -155,31 +186,68 @@ export default function DashboardPage() {
       `cinsoft-registros-${new Date().toISOString().slice(0, 10)}.csv`,
     );
 
-    setExportState("done");
-    window.setTimeout(() => setExportState("idle"), 1800);
+    setExportJob({ kind: "csv", state: "done" });
+    window.setTimeout(() => setExportJob(null), 1800);
   };
 
   /**
-   * Lista de asistencia del taller filtrado, sobre el membrete institucional.
+   * Listas de asistencia sobre el membrete institucional.
    *
-   * Toma **todos** los inscritos del taller y no `filtered`: si respetara la
-   * búsqueda, una consulta olvidada produciría una lista incompleta con la que
-   * se pasaría asistencia, y los que faltaran parecerían no inscritos.
+   * Con un taller filtrado se agrupa por taller, y la cuarta columna es el
+   * grupo escolar. Con "todos" se agrupa por **grupo**, porque una sola lista
+   * con los siete talleres mezclados no serviría para pasar asistencia; ahí la
+   * cuarta columna pasa a ser el taller, que es el dato que falta.
+   *
+   * Cada sección empieza en hoja nueva: se reparten por aula.
+   *
+   * Respeta el filtro de grupo, pero ignora la búsqueda: un texto olvidado en
+   * el buscador daría una lista incompleta sin que nada lo delate en el papel,
+   * y al pasar asistencia los que faltaran parecerían no inscritos.
    */
   const onExportAttendance = async () => {
-    if (selectedWorkshop === undefined) return;
     setExportError(null);
-    setExportState("working");
+    setExportJob({ kind: "sheet", state: "working" });
     try {
-      const sheetRows = (rows ?? [])
-        .filter((row) => row.workshop.slug === selectedWorkshop.slug)
-        // Alfabético: es el orden con el que se pasa lista, no el de registro.
-        .sort((a, b) => a.fullName.localeCompare(b.fullName, "es"))
-        .map((row) => ({
-          accountNumber: row.accountNumber,
-          fullName: row.fullName,
-          group: row.group,
-        }));
+      const toRow = (row: Row) => ({
+        accountNumber: row.accountNumber,
+        fullName: row.fullName,
+        group: row.group,
+        workshopKeyword: row.workshop.keyword,
+      });
+      // Alfabético: el orden con el que se pasa lista, no el de registro.
+      const byName = (a: { fullName: string }, b: { fullName: string }) =>
+        a.fullName.localeCompare(b.fullName, "es");
+
+      const sections =
+        selectedWorkshop === undefined
+          ? GROUPS.filter(
+              (group) => groupFilter === "all" || group === groupFilter,
+            ).map((group) => ({
+              rows: attendanceRows
+                .filter((row) => row.group === group)
+                .map(toRow)
+                .toSorted(byName),
+              secondary: "workshop" as const,
+              title: `Grupo ${group}`,
+            }))
+          : [
+              {
+                rows: attendanceRows.map(toRow).toSorted(byName),
+                secondary: "group" as const,
+                title:
+                  groupFilter === "all"
+                    ? selectedWorkshop.name
+                    : `${selectedWorkshop.name} — Grupo ${groupFilter}`,
+              },
+            ];
+
+      // Una sección sin inscritos sólo gastaría papel.
+      const withRows = sections.filter((section) => section.rows.length > 0);
+      if (withRows.length === 0) {
+        setExportError("No hay inscritos que listar.");
+        setExportJob(null);
+        return;
+      }
 
       const response = await fetch("/plantilla.pdf");
       if (!response.ok) {
@@ -190,17 +258,23 @@ export default function DashboardPage() {
       // pantallas públicas.
       const { buildAttendanceSheet } = await import("@/lib/attendance-sheet");
       const blob = await buildAttendanceSheet({
-        rows: sheetRows,
+        sections: withRows,
         template: await response.arrayBuffer(),
-        workshopName: selectedWorkshop.name,
       });
-      download(blob, `lista-asistencia-${selectedWorkshop.slug}.pdf`);
 
-      setExportState("done");
-      window.setTimeout(() => setExportState("idle"), 1800);
+      const group = groupFilter === "all" ? "" : `-g${groupFilter}`;
+      download(
+        blob,
+        selectedWorkshop === undefined
+          ? `listas-asistencia-por-grupo${group}.pdf`
+          : `lista-asistencia-${selectedWorkshop.slug}${group}.pdf`,
+      );
+
+      setExportJob({ kind: "sheet", state: "done" });
+      window.setTimeout(() => setExportJob(null), 1800);
     } catch {
       setExportError("No se pudo generar la lista. Intenta de nuevo.");
-      setExportState("idle");
+      setExportJob(null);
     }
   };
 
@@ -380,21 +454,50 @@ export default function DashboardPage() {
               ))}
             </div>
 
-            <div className="relative min-w-full sm:min-w-85 lg:min-w-105">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-primary font-bold">
-                <span className="material-symbols-outlined text-[20px]">
-                  search
+            <div className="flex flex-col sm:flex-row items-stretch gap-space-xs">
+              <div className="sm:w-52 shrink-0">
+                <span className="sr-only" id="group-filter-label">
+                  Filtrar por grupo
                 </span>
+                <BrutalistSelect
+                  id="group-filter"
+                  labelledBy="group-filter-label"
+                  onChange={changeGroup}
+                  options={[
+                    {
+                      label: `TODOS LOS GRUPOS (${
+                        filter === "all"
+                          ? (rows?.length ?? 0)
+                          : (countsBySlug.get(filter) ?? 0)
+                      })`,
+                      value: "all",
+                    },
+                    ...GROUPS.map((group) => ({
+                      label: `GRUPO ${group} (${countsByGroup.get(group) ?? 0})`,
+                      value: group,
+                    })),
+                  ]}
+                  placeholder="TODOS LOS GRUPOS"
+                  value={groupFilter}
+                />
               </div>
-              <input
-                className="w-full pl-10 pr-4 py-2 bg-surface-container-lowest border-4 border-outline text-on-surface font-body-md text-body-md placeholder:text-on-surface-variant focus:border-primary focus:outline-none shadow-[4px_4px_0px_#000000] focus:shadow-[6px_6px_0px_#8cc63f] transition-all"
-                onChange={(event) => changeSearch(event.target.value)}
-                placeholder="> BUSCAR POR CUENTA O NOMBRE..."
-                type="text"
-                value={search}
-              />
-              <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-outline font-code-badge text-code-badge">
-                [ESC_CLEAR]
+
+              <div className="relative min-w-full sm:min-w-75 lg:min-w-90">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-primary font-bold">
+                  <span className="material-symbols-outlined text-[20px]">
+                    search
+                  </span>
+                </div>
+                <input
+                  className="w-full pl-10 pr-4 py-2 bg-surface-container-lowest border-4 border-outline text-on-surface font-body-md text-body-md placeholder:text-on-surface-variant focus:border-primary focus:outline-none shadow-[4px_4px_0px_#000000] focus:shadow-[6px_6px_0px_#8cc63f] transition-all"
+                  onChange={(event) => changeSearch(event.target.value)}
+                  placeholder="> BUSCAR POR CUENTA O NOMBRE..."
+                  type="text"
+                  value={search}
+                />
+                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-outline font-code-badge text-code-badge">
+                  [ESC_CLEAR]
+                </div>
               </div>
             </div>
           </section>
@@ -589,63 +692,40 @@ export default function DashboardPage() {
             </div>
 
             <div className="flex flex-col items-stretch sm:items-end gap-space-2xs">
-              <button
-                className={`font-label-caps text-label-caps px-space-lg py-space-sm border-4 border-black shadow-[4px_4px_0px_#000000] hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[6px_6px_0px_#8cc63f] active:translate-x-[4px] active:translate-y-[4px] active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed ${
-                  exportState === "idle"
-                    ? "bg-primary text-on-primary"
-                    : "bg-secondary text-on-secondary"
-                }`}
-                disabled={
-                  exportState !== "idle" ||
-                  (isAttendanceMode
-                    ? attendanceCount === 0
-                    : filtered.length === 0)
-                }
-                onClick={isAttendanceMode ? onExportAttendance : onExportCsv}
-                title={
-                  isAttendanceMode
-                    ? `Lista de asistencia de ${selectedWorkshop?.name} para imprimir`
-                    : "Exporta lo que se está viendo, con el filtro y la búsqueda activos"
-                }
-                type="button"
-              >
-                {exportState === "working" ? (
-                  <>
-                    <span>GENERANDO STREAM...</span>
-                    <span className="material-symbols-outlined text-[18px] animate-spin">
-                      sync
-                    </span>
-                  </>
-                ) : exportState === "done" ? (
-                  <>
-                    <span>DESCARGA LISTA [OK]</span>
-                    <span className="material-symbols-outlined text-[18px]">
-                      check
-                    </span>
-                  </>
-                ) : isAttendanceMode ? (
-                  <>
-                    <span>EXPORTAR LISTA</span>
-                    <span className="material-symbols-outlined text-[18px]">
-                      print
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <span>EXPORTAR CSV</span>
-                    <span className="material-symbols-outlined text-[18px]">
-                      download
-                    </span>
-                  </>
+              <div className="flex flex-col sm:flex-row items-stretch gap-2">
+                {isAttendanceMode ? null : (
+                  <ExportButton
+                    disabled={filtered.length === 0}
+                    icon="download"
+                    job={exportJob}
+                    kind="csv"
+                    label="EXPORTAR CSV"
+                    onClick={onExportCsv}
+                    title="Exporta lo que se está viendo, con el filtro y la búsqueda activos"
+                  />
                 )}
-              </button>
+
+                <ExportButton
+                  disabled={attendanceCount === 0}
+                  icon="print"
+                  job={exportJob}
+                  kind="sheet"
+                  label="EXPORTAR LISTA"
+                  onClick={onExportAttendance}
+                  title={
+                    isAttendanceMode
+                      ? `Lista de asistencia de ${selectedWorkshop?.name}${groupFilter === "all" ? "" : ` (grupo ${groupFilter})`} para imprimir`
+                      : "Listas de asistencia por grupo, con el taller de cada alumno, una por hoja"
+                  }
+                />
+              </div>
 
               {exportError === null ? (
-                isAttendanceMode ? (
-                  <span className="font-code-badge text-code-badge text-on-surface-variant uppercase text-right">
-                    {attendanceCount} INSCRITOS // PDF PARA IMPRIMIR
-                  </span>
-                ) : null
+                <span className="font-code-badge text-code-badge text-on-surface-variant uppercase text-right">
+                  {isAttendanceMode
+                    ? `${attendanceCount} ${plural(attendanceCount, "INSCRITO", "INSCRITOS")} // PDF PARA IMPRIMIR`
+                    : `${attendanceSectionCount} ${plural(attendanceSectionCount, "GRUPO", "GRUPOS")} CON INSCRITOS // UNA LISTA POR HOJA`}
+                </span>
               ) : (
                 <span className="font-code-badge text-code-badge text-secondary uppercase text-right">
                   ⚠ {exportError}
@@ -691,6 +771,9 @@ export default function DashboardPage() {
 }
 
 const pad2 = (value: number) => String(value).padStart(2, "0");
+
+const plural = (count: number, one: string, many: string) =>
+  count === 1 ? one : many;
 
 /** Dispara la descarga de un blob generado en el cliente. */
 function download(blob: Blob, filename: string) {
@@ -750,6 +833,56 @@ function PageButton({
       type="button"
     >
       {label}
+    </button>
+  );
+}
+
+function ExportButton({
+  disabled,
+  icon,
+  job,
+  kind,
+  label,
+  onClick,
+  title,
+}: {
+  disabled: boolean;
+  icon: string;
+  job: { kind: "csv" | "sheet"; state: "working" | "done" } | null;
+  kind: "csv" | "sheet";
+  label: string;
+  onClick: () => void;
+  title: string;
+}) {
+  const mine = job?.kind === kind ? job.state : null;
+  return (
+    <button
+      className={`font-label-caps text-label-caps px-space-lg py-space-sm border-4 border-black shadow-[4px_4px_0px_#000000] hover:translate-x-[-2px] hover:translate-y-[-2px] hover:shadow-[6px_6px_0px_#8cc63f] active:translate-x-[4px] active:translate-y-[4px] active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+        mine === null ? "bg-primary text-on-primary" : "bg-secondary text-on-secondary"
+      }`}
+      disabled={disabled || job !== null}
+      onClick={onClick}
+      title={title}
+      type="button"
+    >
+      {mine === "working" ? (
+        <>
+          <span>GENERANDO STREAM...</span>
+          <span className="material-symbols-outlined text-[18px] animate-spin">
+            sync
+          </span>
+        </>
+      ) : mine === "done" ? (
+        <>
+          <span>DESCARGA LISTA [OK]</span>
+          <span className="material-symbols-outlined text-[18px]">check</span>
+        </>
+      ) : (
+        <>
+          <span>{label}</span>
+          <span className="material-symbols-outlined text-[18px]">{icon}</span>
+        </>
+      )}
     </button>
   );
 }
