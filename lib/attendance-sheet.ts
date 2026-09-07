@@ -4,8 +4,12 @@ export type AttendanceRow = {
   accountNumber: string;
   fullName: string;
   group: string;
-  /** Keyword corta del taller; sólo se imprime en las listas por grupo. */
-  workshopKeyword: string;
+  /**
+   * Keywords cortas de sus talleres; sólo se imprimen en las listas por grupo.
+   * Son varias porque un alumno puede cursar dos, y en la hoja de su grupo
+   * tiene que salir una sola vez con ambos.
+   */
+  workshopKeywords: string[];
 };
 
 /** Alto de carta en puntos: coincide con el MediaBox de la plantilla. */
@@ -253,12 +257,13 @@ function drawTable({
       borderWidth: 0.6,
     });
 
-    const values = [
-      String(firstIndex + index).padStart(2, "0"),
-      row.accountNumber,
-      row.fullName.toUpperCase(),
-      secondary === "group" ? `G-${row.group}` : row.workshopKeyword,
-      "",
+    // Cada celda es una lista de líneas: la de talleres puede llevar dos.
+    const values: string[][] = [
+      [String(firstIndex + index).padStart(2, "0")],
+      [row.accountNumber],
+      [row.fullName.toUpperCase()],
+      secondary === "group" ? [`G-${row.group}`] : row.workshopKeywords,
+      [],
     ];
 
     let cellX = MARGIN_X;
@@ -273,16 +278,22 @@ function drawTable({
         });
       }
 
-      const value = values[columnIndex];
-      if (value !== "") {
-        page.drawText(truncate(value, regular, 9, column.width - 12), {
+      const lines = values[columnIndex];
+      // Con dos talleres se encoge la letra para que quepan apilados sin
+      // alterar el alto de la fila ni el de la tabla entera.
+      const size = lines.length > 1 ? 7 : 9;
+      const firstBaseline =
+        lines.length > 1 ? rowTop + ROW_HEIGHT - 10 : rowTop + 9;
+
+      lines.forEach((line, lineIndex) => {
+        page.drawText(truncate(line, regular, size, column.width - 12), {
           font: regular,
-          size: 9,
+          size,
           x: cellX + 6,
-          y: rowTop + 9,
+          y: firstBaseline - lineIndex * (size + 2),
           color: BLACK,
         });
-      }
+      });
       cellX += column.width;
     });
   });
