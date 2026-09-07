@@ -14,6 +14,7 @@ import { BrutalistSelect } from "@/components/brutalist-select";
 import { Modal, ModalHeader } from "@/components/modal";
 import { api } from "@/convex/_generated/api";
 import { GROUPS } from "@/lib/catalog";
+import { formatSchedule, toSchedule } from "@/lib/schedule";
 import type { Id } from "@/convex/_generated/dataModel";
 import { authClient } from "@/lib/auth-client";
 
@@ -64,7 +65,7 @@ export default function DashboardPage() {
     setSearch(term);
     setPage(1);
   };
-  const [detail, setDetail] = useState<Row | null>(null);
+  const [detail, setDetail] = useState<Row[] | null>(null);
   const [moveRow, setMoveRow] = useState<Row | null>(null);
   const [deleteRow, setDeleteRow] = useState<Row | null>(null);
   // Con el filtro "todos" conviven dos botones, así que el estado guarda cuál
@@ -115,6 +116,9 @@ export default function DashboardPage() {
     (workshop) => workshop.slug === filter,
   );
 
+  const totalStudents = new Set((rows ?? []).map((row) => row.accountNumber))
+    .size;
+
   const isAttendanceMode = selectedWorkshop !== undefined;
   // Lo que entraría en la lista: el taller filtrado, o todos, acotado al grupo.
   const attendanceRows = (rows ?? []).filter(
@@ -130,10 +134,28 @@ export default function DashboardPage() {
     ),
   ).size;
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  // Un alumno puede tener dos inscripciones, pero es una sola persona: la
+  // tabla agrupa por número de cuenta y sus talleres se apilan en la columna.
+  // Con un taller filtrado sólo entra su inscripción de ese taller, así que
+  // ahí cada alumno aparece con un único distintivo.
+  const students = useMemo(() => {
+    const byAccount = new Map<string, Row[]>();
+    for (const row of filtered) {
+      const list = byAccount.get(row.accountNumber);
+      if (list === undefined) byAccount.set(row.accountNumber, [row]);
+      else list.push(row);
+    }
+    return [...byAccount.values()].map((rows) => ({
+      // Ordenadas por antigüedad: el primer taller que eligió va primero.
+      rows: rows.toSorted((a, b) => a._creationTime - b._creationTime),
+      latest: Math.max(...rows.map((row) => row._creationTime)),
+    }));
+  }, [filtered]);
+
+  const pageCount = Math.max(1, Math.ceil(students.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
   const start = (currentPage - 1) * PAGE_SIZE;
-  const pageRows = filtered.slice(start, start + PAGE_SIZE);
+  const pageRows = students.slice(start, start + PAGE_SIZE);
 
   // ESC limpia el buscador desde cualquier parte de la pantalla.
   useEffect(() => {
@@ -233,6 +255,10 @@ export default function DashboardPage() {
           : [
               {
                 rows: attendanceRows.map(toRow).toSorted(byName),
+                schedule: (() => {
+                  const s = toSchedule(selectedWorkshop);
+                  return s === null ? undefined : formatSchedule(s);
+                })(),
                 secondary: "group" as const,
                 title:
                   groupFilter === "all"
@@ -361,7 +387,7 @@ export default function DashboardPage() {
                   METRICA GLOBAL
                 </span>
                 <div className="font-display-hero text-headline-sm uppercase tracking-tight flex items-baseline gap-2">
-                  <span>REGISTROS: {stats?.totalRegistrations ?? 0}</span>
+                  <span>ALUMNOS: {stats?.totalStudents ?? 0}</span>
                   <span className="text-label-caps font-label-caps bg-on-primary text-primary px-1.5 py-0.5">
                     [{stats?.occupancyPercent ?? 0}% OCUPADO]
                   </span>
@@ -389,7 +415,7 @@ export default function DashboardPage() {
                 footer={
                   <>
                     <span className="text-primary font-bold">
-                      +{stats?.registrationsLastHour ?? 0} EN LA ÚLTIMA HORA
+                      {stats?.totalRegistrations ?? 0} INSCRIPCIONES
                     </span>
                     <span className="material-symbols-outlined text-primary text-[18px]">
                       trending_up
@@ -397,8 +423,8 @@ export default function DashboardPage() {
                   </>
                 }
                 format={pad2}
-                label="TOTAL REGISTRADOS"
-                value={stats?.totalRegistrations ?? 0}
+                label="ALUMNOS REGISTRADOS"
+                value={stats?.totalStudents ?? 0}
               />
               <StatCard
                 code="MOD-05"
@@ -441,7 +467,7 @@ export default function DashboardPage() {
             <div className="flex flex-wrap items-center gap-space-xs">
               <FilterTab
                 active={filter === "all"}
-                label={`TODOS (${rows?.length ?? 0})`}
+                label={`TODOS (${totalStudents})`}
                 onClick={() => changeFilter("all")}
               />
               {workshops?.map((workshop) => (
@@ -467,7 +493,7 @@ export default function DashboardPage() {
                     {
                       label: `TODOS LOS GRUPOS (${
                         filter === "all"
-                          ? (rows?.length ?? 0)
+                          ? totalStudents
                           : (countsBySlug.get(filter) ?? 0)
                       })`,
                       value: "all",
@@ -548,77 +574,94 @@ export default function DashboardPage() {
                 </thead>
                 <tbody className="font-body-md text-body-md text-on-surface divide-y-2 divide-surface-container-high">
                   <AnimatePresence initial={false}>
-                    {pageRows.map((row, index) => (
-                    <motion.tr
-                      animate={{ opacity: 1 }}
-                      className={`hover:bg-surface-container transition-colors ${
-                        index % 2 === 0
-                          ? "bg-surface-container-low"
-                          : "bg-surface-container-lowest"
-                      } ${freshIds.has(row._id) ? "row-flash" : ""}`}
-                      exit={reduced ? {} : { opacity: 0 }}
-                      initial={reduced ? {} : { opacity: 0 }}
-                      key={row._id}
-                      layout={reduced ? false : "position"}
-                      transition={{
-                        duration: 0.16,
-                        delay: reduced ? 0 : Math.min(index, 6) * 0.025,
-                      }}
-                    >
-                      <td className="py-space-md px-space-md border-r-2 border-surface-container-high text-center font-code-badge text-primary font-bold">
-                        {String(start + index + 1).padStart(2, "0")}
-                      </td>
-                      <td className="py-space-md px-space-md border-r-2 border-surface-container-high font-bold font-code-badge text-primary-fixed">
-                        {row.accountNumber}
-                      </td>
-                      <td className="py-space-md px-space-md border-r-2 border-surface-container-high font-headline-sm text-headline-sm uppercase text-on-background">
-                        {row.fullName}
-                      </td>
-                      <td className="py-space-md px-space-md border-r-2 border-surface-container-high text-on-surface-variant font-body-sm text-body-sm">
-                        {row.email}
-                      </td>
-                      <td className="py-space-md px-space-md border-r-2 border-surface-container-high">
-                        <span
-                          className={`inline-block bg-surface-container-highest border-2 px-2.5 py-1 font-code-badge text-code-badge font-bold uppercase ${ACCENT_CLASSES[row.workshop.accent]}`}
+                    {pageRows.map((student, index) => {
+                      const row = student.rows[0];
+                      const single =
+                        student.rows.length === 1 ? student.rows[0] : null;
+                      return (
+                        <motion.tr
+                          animate={{ opacity: 1 }}
+                          className={`hover:bg-surface-container transition-colors ${
+                            index % 2 === 0
+                              ? "bg-surface-container-low"
+                              : "bg-surface-container-lowest"
+                          } ${student.rows.some((r) => freshIds.has(r._id)) ? "row-flash" : ""}`}
+                          exit={reduced ? {} : { opacity: 0 }}
+                          initial={reduced ? {} : { opacity: 0 }}
+                          key={row.accountNumber}
+                          layout={reduced ? false : "position"}
+                          transition={{
+                            duration: 0.16,
+                            delay: reduced ? 0 : Math.min(index, 6) * 0.025,
+                          }}
                         >
-                          {row.workshop.keyword}
-                        </span>
-                      </td>
-                      <td className="py-space-md px-space-md border-r-2 border-surface-container-high text-center">
-                        <span className="inline-block bg-surface-container-highest text-primary border border-primary px-2.5 py-0.5 font-code-badge text-code-badge font-bold">
-                          G-{row.group}
-                        </span>
-                      </td>
-                      <td className="py-space-md px-space-md text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            className="px-2.5 py-1.5 bg-surface-container-high hover:bg-primary hover:text-on-primary text-primary font-label-caps text-code-badge border-2 border-primary shadow-[2px_2px_0px_#000] active:translate-x-0.5 active:translate-y-0.5 transition-all"
-                            onClick={() => setDetail(row)}
-                            title="Ver Ficha Completa"
-                            type="button"
-                          >
-                            [VER]
-                          </button>
-                          <button
-                            className="px-2.5 py-1.5 bg-surface-container-high hover:bg-tertiary hover:text-on-tertiary text-tertiary font-label-caps text-code-badge border-2 border-tertiary shadow-[2px_2px_0px_#000] active:translate-x-0.5 active:translate-y-0.5 transition-all"
-                            onClick={() => setMoveRow(row)}
-                            title="Reasignar de taller"
-                            type="button"
-                          >
-                            [MOVER]
-                          </button>
-                          <button
-                            className="px-2.5 py-1.5 bg-secondary-container/30 hover:bg-secondary-container hover:text-on-secondary-container text-secondary font-label-caps text-code-badge border-2 border-secondary shadow-[2px_2px_0px_#000] active:translate-x-0.5 active:translate-y-0.5 transition-all"
-                            onClick={() => openDelete(row)}
-                            title="Eliminar Registro"
-                            type="button"
-                          >
-                            [BORRAR]
-                          </button>
-                        </div>
-                      </td>
-                    </motion.tr>
-                    ))}
+                          <td className="py-space-md px-space-md border-r-2 border-surface-container-high text-center font-code-badge text-primary font-bold">
+                            {String(start + index + 1).padStart(2, "0")}
+                          </td>
+                          <td className="py-space-md px-space-md border-r-2 border-surface-container-high font-bold font-code-badge text-primary-fixed">
+                            {row.accountNumber}
+                          </td>
+                          <td className="py-space-md px-space-md border-r-2 border-surface-container-high font-headline-sm text-headline-sm uppercase text-on-background">
+                            {row.fullName}
+                          </td>
+                          <td className="py-space-md px-space-md border-r-2 border-surface-container-high text-on-surface-variant font-body-sm text-body-sm">
+                            {row.email}
+                          </td>
+                          <td className="py-space-md px-space-md border-r-2 border-surface-container-high">
+                            <div className="flex flex-wrap gap-1">
+                              {student.rows.map((registration) => (
+                                <span
+                                  className={`inline-block bg-surface-container-highest border-2 px-2.5 py-1 font-code-badge text-code-badge font-bold uppercase ${ACCENT_CLASSES[registration.workshop.accent]}`}
+                                  key={registration._id}
+                                >
+                                  {registration.workshop.keyword}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="py-space-md px-space-md border-r-2 border-surface-container-high text-center">
+                            <span className="inline-block bg-surface-container-highest text-primary border border-primary px-2.5 py-0.5 font-code-badge text-code-badge font-bold">
+                              G-{row.group}
+                            </span>
+                          </td>
+                          <td className="py-space-md px-space-md text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                className="px-2.5 py-1.5 bg-surface-container-high hover:bg-primary hover:text-on-primary text-primary font-label-caps text-code-badge border-2 border-primary shadow-[2px_2px_0px_#000] active:translate-x-0.5 active:translate-y-0.5 transition-all"
+                                onClick={() => setDetail(student.rows)}
+                                title="Ver ficha completa"
+                                type="button"
+                              >
+                                [VER]
+                              </button>
+                              {/* Con dos talleres estos botones no sabrían a
+                                  cuál aplicarse, así que ahí se opera desde la
+                                  ficha, donde cada taller lleva los suyos. */}
+                              {single === null ? null : (
+                                <>
+                                  <button
+                                    className="px-2.5 py-1.5 bg-surface-container-high hover:bg-tertiary hover:text-on-tertiary text-tertiary font-label-caps text-code-badge border-2 border-tertiary shadow-[2px_2px_0px_#000] active:translate-x-0.5 active:translate-y-0.5 transition-all"
+                                    onClick={() => setMoveRow(single)}
+                                    title="Reasignar de taller"
+                                    type="button"
+                                  >
+                                    [MOVER]
+                                  </button>
+                                  <button
+                                    className="px-2.5 py-1.5 bg-secondary-container/30 hover:bg-secondary-container hover:text-on-secondary-container text-secondary font-label-caps text-code-badge border-2 border-secondary shadow-[2px_2px_0px_#000] active:translate-x-0.5 active:translate-y-0.5 transition-all"
+                                    onClick={() => openDelete(single)}
+                                    title="Eliminar registro"
+                                    type="button"
+                                  >
+                                    [BORRAR]
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </motion.tr>
+                      );
+                    })}
                   </AnimatePresence>
                 </tbody>
               </table>
@@ -634,9 +677,9 @@ export default function DashboardPage() {
             <div className="font-code-badge text-code-badge text-on-surface-variant flex items-center gap-2">
               <span className="w-2.5 h-2.5 bg-primary" />
               <span>
-                MOSTRANDO {filtered.length === 0 ? 0 : start + 1}-
-                {Math.min(start + PAGE_SIZE, filtered.length)} DE{" "}
-                {filtered.length} REGISTROS // PÁGINA {currentPage} DE{" "}
+                MOSTRANDO {students.length === 0 ? 0 : start + 1}-
+                {Math.min(start + PAGE_SIZE, students.length)} DE{" "}
+                {students.length} ALUMNOS // PÁGINA {currentPage} DE{" "}
                 {pageCount}
               </span>
             </div>
@@ -751,9 +794,9 @@ export default function DashboardPage() {
           <DetailModal
             key="detail"
             onClose={() => setDetail(null)}
-            onDelete={() => openDelete(detail)}
-            onMove={() => openMove(detail)}
-            row={detail}
+            onDelete={openDelete}
+            onMove={openMove}
+            rows={detail}
           />
         )}
 
@@ -1008,66 +1051,95 @@ function DetailModal({
   onClose,
   onDelete,
   onMove,
-  row,
+  rows,
 }: {
   onClose: () => void;
-  onDelete: () => void;
-  onMove: () => void;
-  row: Row;
+  onDelete: (row: Row) => void;
+  onMove: (row: Row) => void;
+  rows: Row[];
 }) {
+  const student = rows[0];
+
   return (
     <Modal labelledBy="detail-title" onClose={onClose}>
       <ModalHeader
         id="detail-title"
         onClose={onClose}
-        title={`RECORD://${row.accountNumber}`}
+        title={`RECORD://${student.accountNumber}`}
       />
 
-      <dl className="p-space-lg grid grid-cols-1 sm:grid-cols-2 gap-space-md">
-        <ModalField label="NÚMERO DE CUENTA" value={row.accountNumber} />
-        <ModalField label="GRUPO" value={`G-${row.group}`} />
-        <ModalField label="NOMBRE" value={row.fullName.toUpperCase()} />
-        <ModalField label="CORREO" value={row.email} />
-        <ModalField label="TALLER" value={row.workshop.keyword} />
-        <ModalField
-          label="REGISTRADO"
-          value={formatTimestamp(row._creationTime)}
-        />
-        {row.reassignedAt === undefined ? null : (
+      <div className="overflow-y-auto scrollbar-brutal">
+        <dl className="p-space-lg grid grid-cols-1 sm:grid-cols-2 gap-space-md">
+          <ModalField label="NÚMERO DE CUENTA" value={student.accountNumber} />
+          <ModalField label="GRUPO" value={`G-${student.group}`} />
+          <ModalField label="NOMBRE" value={student.fullName.toUpperCase()} />
+          <ModalField label="CORREO" value={student.email} />
           <ModalField
-            label="REASIGNADO"
-            value={formatTimestamp(row.reassignedAt)}
+            label="AVISO ACEPTADO"
+            value={
+              student.acceptedPrivacyAt === undefined
+                ? "SIN CONSTANCIA"
+                : formatTimestamp(student.acceptedPrivacyAt)
+            }
           />
-        )}
-        <ModalField
-          label="AVISO ACEPTADO"
-          value={
-            row.acceptedPrivacyAt === undefined
-              ? "SIN CONSTANCIA"
-              : formatTimestamp(row.acceptedPrivacyAt)
-          }
-        />
-        <ModalField
-          label="USO DE IMAGEN (3.2)"
-          value={row.allowsSecondaryUse === true ? "AUTORIZADO" : "NO AUTORIZADO"}
-        />
-      </dl>
+          <ModalField
+            label="USO DE IMAGEN (3.2)"
+            value={
+              student.allowsSecondaryUse === true
+                ? "AUTORIZADO"
+                : "NO AUTORIZADO"
+            }
+          />
+        </dl>
 
-      <div className="px-space-lg pb-space-lg flex justify-end gap-2">
-        <button
-          className="px-3 py-2 bg-surface-container-high hover:bg-tertiary hover:text-on-tertiary text-tertiary font-label-caps text-code-badge border-2 border-tertiary shadow-[2px_2px_0px_#000]"
-          onClick={onMove}
-          type="button"
-        >
-          [MOVER DE TALLER]
-        </button>
-        <button
-          className="px-3 py-2 bg-secondary-container/30 hover:bg-secondary-container hover:text-on-secondary-container text-secondary font-label-caps text-code-badge border-2 border-secondary shadow-[2px_2px_0px_#000]"
-          onClick={onDelete}
-          type="button"
-        >
-          [BORRAR REGISTRO]
-        </button>
+        {/* Cada inscripción se opera por separado: son filas distintas. */}
+        <div className="px-space-lg pb-space-lg flex flex-col gap-space-sm">
+          <span className="font-label-caps text-label-caps text-primary uppercase tracking-wider">
+            {rows.length === 1
+              ? "TALLER INSCRITO"
+              : `${rows.length} TALLERES INSCRITOS`}
+          </span>
+
+          {rows.map((row) => (
+            <div
+              className="border-2 border-surface-container-high bg-surface-container p-space-md flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm"
+              key={row._id}
+            >
+              <div className="flex flex-col gap-space-2xs min-w-0">
+                <span
+                  className={`self-start inline-block bg-surface-container-highest border-2 px-2.5 py-1 font-code-badge text-code-badge font-bold uppercase ${ACCENT_CLASSES[row.workshop.accent]}`}
+                >
+                  {row.workshop.keyword}
+                </span>
+                <span className="font-code-badge text-code-badge text-on-surface-variant uppercase">
+                  REGISTRADO: {formatTimestamp(row._creationTime)}
+                </span>
+                {row.reassignedAt === undefined ? null : (
+                  <span className="font-code-badge text-code-badge text-secondary uppercase">
+                    REASIGNADO: {formatTimestamp(row.reassignedAt)}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  className="px-3 py-2 bg-surface-container-high hover:bg-tertiary hover:text-on-tertiary text-tertiary font-label-caps text-code-badge border-2 border-tertiary shadow-[2px_2px_0px_#000]"
+                  onClick={() => onMove(row)}
+                  type="button"
+                >
+                  [MOVER]
+                </button>
+                <button
+                  className="px-3 py-2 bg-secondary-container/30 hover:bg-secondary-container hover:text-on-secondary-container text-secondary font-label-caps text-code-badge border-2 border-secondary shadow-[2px_2px_0px_#000]"
+                  onClick={() => onDelete(row)}
+                  type="button"
+                >
+                  [BORRAR]
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </Modal>
   );

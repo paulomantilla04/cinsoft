@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internalAction, internalMutation } from "./_generated/server";
 import { createAuth } from "./auth";
+import { mexicoTime } from "../lib/schedule";
 
 /**
  * Catálogo FICTICIO de arranque (PLAN §8.2). Sustituir por el real en cuanto
@@ -17,13 +18,17 @@ const WORKSHOPS = [
     slug: "seg-aws",
     capacity: 30,
     accent: "tertiary" as const,
+    startsAt: mexicoTime(2026, 9, 21, 11, 30),
+    endsAt: mexicoTime(2026, 9, 21, 14, 30),
   },
   {
     name: "n8n Workshop: De la Idea a la Automatización",
     keyword: "n8n Workshop",
     slug: "n8n",
-    capacity: 20,
+    capacity: 30,
     accent: "secondary" as const,
+    startsAt: mexicoTime(2026, 9, 22, 11, 0),
+    endsAt: mexicoTime(2026, 9, 22, 14, 0),
   },
   {
     name: "Networking y Entrega de Contenido",
@@ -31,34 +36,44 @@ const WORKSHOPS = [
     slug: "networking",
     capacity: 30,
     accent: "primary" as const,
+    startsAt: mexicoTime(2026, 9, 23, 14, 30),
+    endsAt: mexicoTime(2026, 9, 23, 19, 30),
   },
   {
     name: "Desarrollo Móvil multiplataforma con React Native",
     keyword: "React Native",
     slug: "movil-react-native",
-    capacity: 20,
+    capacity: 30,
     accent: "primary" as const,
+    startsAt: mexicoTime(2026, 9, 25, 9, 30),
+    endsAt: mexicoTime(2026, 9, 25, 14, 0),
   },
   {
     name: "Encriptación de archivos con criptografía acústica",
     keyword: "Criptografía",
     slug: "cripto-acustica",
-    capacity: 25,
+    capacity: 30,
     accent: "tertiary" as const,
+    startsAt: mexicoTime(2026, 9, 25, 9, 30),
+    endsAt: mexicoTime(2026, 9, 25, 14, 0),
   },
   {
-    name: "Primeros pasos en SwiftUI",
+    name: "Desarollo Móvil con SwiftUI",
     keyword: "SwiftUI",
     slug: "swiftui",
-    capacity: 13,
+    capacity: 24,
     accent: "secondary" as const,
+    startsAt: mexicoTime(2026, 9, 25, 9, 30),
+    endsAt: mexicoTime(2026, 9, 25, 14, 0),
   },
   {
     name: "Desarrollo Web con Net Core e IA",
     keyword: "Des. Web Net Core",
     slug: "web-netcore",
-    capacity: 20,
+    capacity: 30,
     accent: "primary" as const,
+    startsAt: mexicoTime(2026, 9, 25, 9, 30),
+    endsAt: mexicoTime(2026, 9, 25, 14, 0),
   },
 ];
 
@@ -96,6 +111,7 @@ export const seedWorkshops = internalMutation({
         });
         created += 1;
       } else {
+        // Nunca toca `enrolled`: las inscripciones existentes se respetan.
         await ctx.db.patch(existing._id, {
           name: workshop.name,
           keyword: workshop.keyword,
@@ -103,6 +119,8 @@ export const seedWorkshops = internalMutation({
           accent: workshop.accent,
           active: true,
           order: index,
+          startsAt: workshop.startsAt,
+          endsAt: workshop.endsAt,
         });
         updated += 1;
       }

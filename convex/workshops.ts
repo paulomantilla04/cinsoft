@@ -27,6 +27,8 @@ export const list = query({
           enrolled: workshop.enrolled,
           remaining,
           isFull: remaining === 0,
+          startsAt: workshop.startsAt,
+          endsAt: workshop.endsAt,
         };
       });
   },
@@ -56,7 +58,12 @@ export const stats = query({
       null,
     );
 
+    // Alumnos distintos: uno puede estar inscrito en dos talleres, y contar
+    // filas lo dejaría contado dos veces.
+    const students = new Set(registrations.map((r) => r.accountNumber));
+
     return {
+      totalStudents: students.size,
       totalRegistrations: registrations.length,
       registrationsLastHour: lastHour.length,
       activeWorkshops: active.length,

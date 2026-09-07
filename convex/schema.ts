@@ -19,6 +19,14 @@ export default defineSchema({
     ),
     active: v.boolean(),
     order: v.number(),
+    // Inicio y fin del taller, en milisegundos. Se guardan como instantes y no
+    // como texto para poder comparar solapamientos sin analizar cadenas.
+    //
+    // Opcionales porque los talleres ya existentes en producción no los
+    // tenían: con campos obligatorios, desplegar el esquema fallaría contra
+    // esos documentos. El seed los rellena justo después.
+    startsAt: v.optional(v.number()),
+    endsAt: v.optional(v.number()),
   }).index("by_slug", ["slug"]),
 
   registrations: defineTable({
