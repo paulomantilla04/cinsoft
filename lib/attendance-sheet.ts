@@ -4,6 +4,8 @@ export type AttendanceRow = {
   accountNumber: string;
   fullName: string;
   group: string;
+  /** Keyword corta del taller; sólo se imprime en las listas por grupo. */
+  workshopKeyword: string;
 };
 
 /** Alto de carta en puntos: coincide con el MediaBox de la plantilla. */
@@ -15,37 +17,62 @@ const MARGIN_X = 48;
 const MARGIN_BOTTOM = 56;
 const ROW_HEIGHT = 26;
 
-/** Anchos de columna, de izquierda a derecha. Suman el ancho útil. */
-const COLUMNS = [
-  { key: "index", label: "#", width: 34 },
-  { key: "account", label: "NÚMERO DE CUENTA", width: 132 },
-  { key: "name", label: "NOMBRE", width: 232 },
-  { key: "group", label: "GRUPO", width: 62 },
-  { key: "attendance", label: "ASISTENCIA", width: 56 },
-] as const;
+/**
+ * La cuarta columna cambia según cómo se agrupe la lista: en la de un taller
+ * el dato que falta es el grupo escolar, y en la de un grupo, el taller. La
+ * otra ya está en el título, así que repetirla sólo robaría ancho al nombre.
+ */
+const COLUMNS = {
+  group: [
+    { label: "#", width: 34 },
+    { label: "NÚMERO DE CUENTA", width: 132 },
+    { label: "NOMBRE", width: 232 },
+    { label: "GRUPO", width: 62 },
+    { label: "ASISTENCIA", width: 56 },
+  ],
+  workshop: [
+    { label: "#", width: 34 },
+    { label: "NÚMERO DE CUENTA", width: 120 },
+    { label: "NOMBRE", width: 190 },
+    { label: "TALLER", width: 116 },
+    { label: "ASISTENCIA", width: 56 },
+  ],
+} as const;
 
-const TABLE_WIDTH = COLUMNS.reduce((sum, column) => sum + column.width, 0);
+/** Ambas disposiciones suman lo mismo, así que la tabla no cambia de ancho. */
+const TABLE_WIDTH = COLUMNS.group.reduce(
+  (sum, column) => sum + column.width,
+  0,
+);
 
 const BLACK = rgb(0, 0, 0);
 const GREY = rgb(0.45, 0.45, 0.45);
 const HEADER_FILL = rgb(0.91, 0.91, 0.91);
 
+export type AttendanceSection = {
+  rows: AttendanceRow[];
+  /** Qué dato lleva la cuarta columna; el otro va en el título. */
+  secondary: keyof typeof COLUMNS;
+  title: string;
+};
+
 /**
- * Lista de asistencia para imprimir, dibujada sobre `public/plantilla.pdf` para
- * conservar el membrete institucional.
+ * Listas de asistencia para imprimir, dibujadas sobre `public/plantilla.pdf`
+ * para conservar el membrete institucional.
+ *
+ * Cada sección es un taller y **siempre empieza en hoja nueva**: se imprimen
+ * para repartirlas por aula, así que dos talleres no pueden compartir papel.
  *
  * La última columna va vacía a propósito: es donde se palomea a mano.
  */
 export async function buildAttendanceSheet({
-  rows,
+  sections,
   template: templateBytes,
-  workshopName,
 }: {
-  rows: AttendanceRow[];
+  sections: AttendanceSection[];
   /** Bytes de `plantilla.pdf`. Se reciben para poder generar la hoja fuera
    *  del navegador (scripts, pruebas) sin depender de `fetch`. */
   template: ArrayBuffer | Uint8Array;
-  workshopName: string;
 }): Promise<Blob> {
   const template = await PDFDocument.load(templateBytes);
 
@@ -58,42 +85,54 @@ export async function buildAttendanceSheet({
   const usableHeight = firstRowTop - MARGIN_BOTTOM;
   const rowsPerPage = Math.max(1, Math.floor(usableHeight / ROW_HEIGHT) - 1);
 
-  const pageCount = Math.max(1, Math.ceil(rows.length / rowsPerPage));
+  const layout = sections.map((section) => ({
+    ...section,
+    pageCount: Math.max(1, Math.ceil(section.rows.length / rowsPerPage)),
+  }));
+  const totalPages = layout.reduce(
+    (sum, section) => sum + section.pageCount,
+    0,
+  );
 
   // Una sola llamada a `copyPages` para todas las páginas: llamarla en bucle
   // duplicaría las imágenes del membrete en cada copia y el archivo se
   // multiplicaría de tamaño.
   const copied = await doc.copyPages(
     template,
-    Array.from({ length: pageCount }, () => 0),
+    Array.from({ length: totalPages }, () => 0),
   );
 
-  for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
-    const page = doc.addPage(copied[pageIndex]);
+  let cursor = 0;
+  for (const section of layout) {
+    for (let pageIndex = 0; pageIndex < section.pageCount; pageIndex += 1) {
+      const page = doc.addPage(copied[cursor]);
+      cursor += 1;
 
-    const slice = rows.slice(
-      pageIndex * rowsPerPage,
-      (pageIndex + 1) * rowsPerPage,
-    );
+      const slice = section.rows.slice(
+        pageIndex * rowsPerPage,
+        (pageIndex + 1) * rowsPerPage,
+      );
 
-    drawHeading({
-      bold,
-      page,
-      pageCount,
-      pageIndex,
-      regular,
-      total: rows.length,
-      workshopName,
-    });
+      drawHeading({
+        bold,
+        page,
+        pageCount: section.pageCount,
+        pageIndex,
+        regular,
+        total: section.rows.length,
+        title: section.title,
+      });
 
-    drawTable({
-      bold,
-      firstIndex: pageIndex * rowsPerPage + 1,
-      page,
-      regular,
-      rows: slice,
-      top: firstRowTop,
-    });
+      drawTable({
+        bold,
+        firstIndex: pageIndex * rowsPerPage + 1,
+        page,
+        regular,
+        rows: slice,
+        secondary: section.secondary,
+        top: firstRowTop,
+      });
+    }
   }
 
   const bytes = await doc.save();
@@ -107,16 +146,16 @@ function drawHeading({
   pageCount,
   pageIndex,
   regular,
+  title,
   total,
-  workshopName,
 }: {
   bold: Awaited<ReturnType<PDFDocument["embedFont"]>>;
   page: PDFPage;
   pageCount: number;
   pageIndex: number;
   regular: Awaited<ReturnType<PDFDocument["embedFont"]>>;
+  title: string;
   total: number;
-  workshopName: string;
 }) {
   const top = PAGE_HEIGHT - HEADER_BOTTOM;
 
@@ -128,15 +167,15 @@ function drawHeading({
     color: GREY,
   });
 
-  // El nombre del taller se reduce si no cabe, antes que desbordar el ancho.
+  // El título se reduce si no cabe, antes que desbordar el ancho.
   let titleSize = 16;
   while (
     titleSize > 10 &&
-    bold.widthOfTextAtSize(workshopName, titleSize) > TABLE_WIDTH
+    bold.widthOfTextAtSize(title, titleSize) > TABLE_WIDTH
   ) {
     titleSize -= 0.5;
   }
-  page.drawText(workshopName, {
+  page.drawText(title, {
     font: bold,
     size: titleSize,
     x: MARGIN_X,
@@ -163,6 +202,7 @@ function drawTable({
   page,
   regular,
   rows,
+  secondary,
   top,
 }: {
   bold: Awaited<ReturnType<PDFDocument["embedFont"]>>;
@@ -170,8 +210,10 @@ function drawTable({
   page: PDFPage;
   regular: Awaited<ReturnType<PDFDocument["embedFont"]>>;
   rows: AttendanceRow[];
+  secondary: keyof typeof COLUMNS;
   top: number;
 }) {
+  const columns = COLUMNS[secondary];
   // Cabecera
   page.drawRectangle({
     x: MARGIN_X,
@@ -184,7 +226,7 @@ function drawTable({
   });
 
   let x = MARGIN_X;
-  for (const column of COLUMNS) {
+  for (const column of columns) {
     page.drawText(column.label, {
       font: bold,
       size: 7.5,
@@ -211,12 +253,12 @@ function drawTable({
       String(firstIndex + index).padStart(2, "0"),
       row.accountNumber,
       row.fullName.toUpperCase(),
-      `G-${row.group}`,
+      secondary === "group" ? `G-${row.group}` : row.workshopKeyword,
       "",
     ];
 
     let cellX = MARGIN_X;
-    COLUMNS.forEach((column, columnIndex) => {
+    columns.forEach((column, columnIndex) => {
       // Separadores entre columnas, salvo antes de la primera.
       if (columnIndex > 0) {
         page.drawLine({
