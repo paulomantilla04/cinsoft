@@ -230,12 +230,27 @@ export default function DashboardPage() {
     setExportError(null);
     setExportJob({ kind: "sheet", state: "working" });
     try {
-      const toRow = (row: Row) => ({
-        accountNumber: row.accountNumber,
-        fullName: row.fullName,
-        group: row.group,
-        workshopKeyword: row.workshop.keyword,
-      });
+      /**
+       * Junta las inscripciones de un mismo alumno en una fila con sus dos
+       * talleres. Sin esto, en la hoja de su grupo saldría dos veces y se le
+       * pasaría lista por duplicado.
+       */
+      const toRows = (list: Row[]) => {
+        const byAccount = new Map<string, Row[]>();
+        for (const row of list) {
+          const found = byAccount.get(row.accountNumber);
+          if (found === undefined) byAccount.set(row.accountNumber, [row]);
+          else found.push(row);
+        }
+        return [...byAccount.values()].map((group) => ({
+          accountNumber: group[0].accountNumber,
+          fullName: group[0].fullName,
+          group: group[0].group,
+          workshopKeywords: group
+            .toSorted((a, b) => a._creationTime - b._creationTime)
+            .map((row) => row.workshop.keyword),
+        }));
+      };
       // Alfabético: el orden con el que se pasa lista, no el de registro.
       const byName = (a: { fullName: string }, b: { fullName: string }) =>
         a.fullName.localeCompare(b.fullName, "es");
@@ -245,16 +260,15 @@ export default function DashboardPage() {
           ? GROUPS.filter(
               (group) => groupFilter === "all" || group === groupFilter,
             ).map((group) => ({
-              rows: attendanceRows
-                .filter((row) => row.group === group)
-                .map(toRow)
-                .toSorted(byName),
+              rows: toRows(
+                attendanceRows.filter((row) => row.group === group),
+              ).toSorted(byName),
               secondary: "workshop" as const,
               title: `Grupo ${group}`,
             }))
           : [
               {
-                rows: attendanceRows.map(toRow).toSorted(byName),
+                rows: toRows(attendanceRows).toSorted(byName),
                 schedule: (() => {
                   const s = toSchedule(selectedWorkshop);
                   return s === null ? undefined : formatSchedule(s);
