@@ -3,6 +3,7 @@ import { mutation, query } from "./_generated/server";
 import { requireAdmin } from "./lib/auth";
 import { applyMove } from "./lib/registrations";
 import { parseLookupTerm, registrationSchema } from "../lib/validation";
+import { assertCanJoin } from "./lib/registrations";
 
 /**
  * El corazón de la app. Pública.
@@ -49,36 +50,32 @@ export const create = mutation({
       });
     }
 
-    // 3. Duplicados: un alumno = un solo taller.
+    // 3. Inscripciones que ya tiene este alumno. Cada inscripción es una fila
+    // propia, así que buscar por cuenta devuelve una o dos.
     const byAccount = await ctx.db
       .query("registrations")
       .withIndex("by_account", (q) => q.eq("accountNumber", accountNumber))
-      .first();
-    if (byAccount !== null) {
-      throw new ConvexError({
-        code: "DUPLICATE_ACCOUNT",
-        message: "Ese número de cuenta ya tiene un taller asignado.",
-      });
-    }
-
+      .collect();
     const byEmail = await ctx.db
       .query("registrations")
       .withIndex("by_email", (q) => q.eq("email", email))
-      .first();
-    if (byEmail !== null) {
+      .collect();
+
+    // La cuenta y el correo tienen que apuntar al mismo alumno; si no, alguien
+    // se está registrando con la cuenta de otro o con un correo distinto al
+    // que ya usó, y acabaríamos con dos identidades cruzadas.
+    const mismatch =
+      byAccount.some((row) => row.email !== email) ||
+      byEmail.some((row) => row.accountNumber !== accountNumber);
+    if (mismatch) {
       throw new ConvexError({
-        code: "DUPLICATE_EMAIL",
-        message: "Ese correo ya tiene un taller asignado.",
+        code: "IDENTITY_MISMATCH",
+        message:
+          "Ese número de cuenta ya está registrado con otro correo. Usa el mismo con el que te inscribiste.",
       });
     }
 
-    // 4. Cupo.
-    if (workshop.enrolled >= workshop.capacity) {
-      throw new ConvexError({
-        code: "WORKSHOP_FULL",
-        message: "El taller alcanzó su cupo máximo.",
-      });
-    }
+    await assertCanJoin(ctx, byAccount, workshop);
 
     // 5. Insertar y actualizar el contador denormalizado.
     const registrationId = await ctx.db.insert("registrations", {
@@ -192,14 +189,6 @@ function maskName(fullName: string) {
   return [first, ...initials].join(" ").toUpperCase();
 }
 
-/** "mo123456@uaeh.edu.mx" -> "mo****56@uaeh.edu.mx" */
-function maskEmail(email: string) {
-  const [local, domain] = email.split("@");
-  if (domain === undefined) return email;
-  if (local.length <= 4) return `${local[0]}***@${domain}`;
-  return `${local.slice(0, 2)}${"*".repeat(local.length - 4)}${local.slice(-2)}@${domain}`;
-}
-
 /**
  * Consulta pública de estatus para /estatus: el alumno escribe su número de
  * cuenta o su correo institucional y ve en qué taller quedó.
@@ -209,7 +198,14 @@ function maskEmail(email: string) {
  *
  * Los datos personales van enmascarados a propósito: el número de cuenta son 6
  * dígitos y por tanto es enumerable, así que la respuesta debe alcanzar para
- * que el alumno se reconozca pero no para cosechar nombres y correos ajenos.
+ * que el alumno se reconozca pero no para cosechar datos ajenos.
+ *
+ * El correo **no se devuelve en ninguna forma**, ni enmascarado. En la UAEH se
+ * deriva de las dos primeras letras del primer apellido más el número de
+ * cuenta, así que una máscara como `mo****21@` junto al número que la persona
+ * acaba de teclear reconstruye el correo entero. Además ese correo es el
+ * segundo dato que `addWorkshop` exige para confirmar identidad: revelarlo
+ * dejaría inscribir talleres a nombre de cualquiera.
  */
 export const lookup = query({
   args: { term: v.string() },
@@ -219,40 +215,116 @@ export const lookup = query({
       return { status: "invalid" } as const;
     }
 
-    const registration =
+    const found =
       parsed.kind === "account"
         ? await ctx.db
             .query("registrations")
             .withIndex("by_account", (q) => q.eq("accountNumber", parsed.value))
-            .first()
+            .collect()
         : await ctx.db
             .query("registrations")
             .withIndex("by_email", (q) => q.eq("email", parsed.value))
-            .first();
+            .collect();
 
-    if (registration === null) {
+    if (found.length === 0) {
       return { status: "not_found" } as const;
     }
 
-    const workshop = await ctx.db.get(registration.workshopId);
-
-    return {
-      status: "found" as const,
-      registration: {
+    // Un alumno puede tener hasta dos talleres, así que devolvemos todos.
+    const registrations = [];
+    for (const registration of found.toSorted(
+      (a, b) => a._creationTime - b._creationTime,
+    )) {
+      const workshop = await ctx.db.get(registration.workshopId);
+      registrations.push({
         accountNumber: registration.accountNumber,
         maskedName: maskName(registration.fullName),
-        maskedEmail: maskEmail(registration.email),
         group: registration.group,
         registeredAt: registration._creationTime,
         reassignedAt: registration.reassignedAt,
-        acceptedPrivacyAt: registration.acceptedPrivacyAt,
-        allowsSecondaryUse: registration.allowsSecondaryUse,
         workshop: {
+          _id: registration.workshopId,
           name: workshop?.name ?? "—",
           keyword: workshop?.keyword ?? "—",
           accent: workshop?.accent ?? "primary",
+          startsAt: workshop?.startsAt,
+          endsAt: workshop?.endsAt,
         },
-      },
-    };
+      });
+    }
+
+    return { status: "found" as const, registrations };
+  },
+});
+
+
+/**
+ * Suma un segundo taller a alguien que ya está inscrito, sin pedirle otra vez
+ * sus datos. Es lo que usa /estatus.
+ *
+ * Exige el correo institucional además del número de cuenta: /estatus es
+ * público y la cuenta son seis dígitos enumerables, así que sin esto
+ * cualquiera podría inscribir a otros alumnos y llenar los talleres.
+ * Consultar sigue necesitando sólo la cuenta; inscribir necesita ambos.
+ */
+export const addWorkshop = mutation({
+  args: {
+    accountNumber: v.string(),
+    email: v.string(),
+    workshopId: v.id("workshops"),
+    acceptedPrivacy: v.boolean(),
+    allowsSecondaryUse: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    if (!args.acceptedPrivacy) {
+      throw new ConvexError({
+        code: "PRIVACY_NOT_ACCEPTED",
+        message: "Debes aceptar el aviso de privacidad para registrarte.",
+      });
+    }
+
+    const accountNumber = args.accountNumber.trim();
+    const email = args.email.trim().toLowerCase();
+
+    const existing = await ctx.db
+      .query("registrations")
+      .withIndex("by_account", (q) => q.eq("accountNumber", accountNumber))
+      .collect();
+
+    // Mensaje único para "no existe" y "el correo no coincide": distinguirlos
+    // confirmaría qué números de cuenta están registrados.
+    const match = existing.find((row) => row.email === email);
+    if (match === undefined) {
+      throw new ConvexError({
+        code: "IDENTITY_MISMATCH",
+        message:
+          "El número de cuenta y el correo no coinciden con ningún registro.",
+      });
+    }
+
+    const workshop = await ctx.db.get(args.workshopId);
+    if (workshop === null || !workshop.active) {
+      throw new ConvexError({
+        code: "WORKSHOP_NOT_FOUND",
+        message: "El taller seleccionado ya no está disponible.",
+      });
+    }
+
+    await assertCanJoin(ctx, existing, workshop);
+
+    // Nombre y grupo se copian del registro que ya existe: así el alumno no los
+    // reescribe y no acaba con dos filas que se contradicen.
+    const registrationId = await ctx.db.insert("registrations", {
+      accountNumber: match.accountNumber,
+      email: match.email,
+      fullName: match.fullName,
+      group: match.group,
+      workshopId: workshop._id,
+      acceptedPrivacyAt: Date.now(),
+      allowsSecondaryUse: args.allowsSecondaryUse,
+    });
+    await ctx.db.patch(workshop._id, { enrolled: workshop.enrolled + 1 });
+
+    return { registrationId, workshopName: workshop.name };
   },
 });

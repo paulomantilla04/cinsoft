@@ -15,6 +15,7 @@ import logoCinsoft from "@/public/logo-cinsoft.png";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { GROUPS, LOW_QUOTA_RATIO } from "@/lib/catalog";
+import { formatScheduleShort, overlaps, toSchedule } from "@/lib/schedule";
 import {
   REGISTRATION_ERRORS,
   registrationSchema,
@@ -26,7 +27,7 @@ type Confirmation = {
   accountNumber: string;
   email: string;
   fullName: string;
-  workshopName: string;
+  workshopNames: string[];
 };
 
 /** /registro — portado 1:1 de design/form.html. */
@@ -75,8 +76,21 @@ export default function RegistroPage() {
   });
 
   const selectedId = watch("workshopId");
+  const secondId = watch("secondWorkshopId");
   const selected = workshops?.find((workshop) => workshop._id === selectedId);
+  const second = workshops?.find((workshop) => workshop._id === secondId);
   const isDone = confirmation !== null;
+
+  // Para el segundo taller sólo se ofrecen los que no se cruzan con el
+  // primero: es preferible no poder elegirlo a que el servidor lo rechace
+  // después de haber leído el aviso de privacidad.
+  const firstSchedule = selected === undefined ? null : toSchedule(selected);
+  const compatible = (workshops ?? []).filter((workshop) => {
+    if (workshop._id === selectedId) return false;
+    const schedule = toSchedule(workshop);
+    if (firstSchedule === null || schedule === null) return true;
+    return !overlaps(firstSchedule, schedule);
+  });
 
   // `handleSubmit` sólo llama a esto si el formulario es válido, así que el
   // aviso únicamente aparece cuando el registro ya puede enviarse.
@@ -87,15 +101,30 @@ export default function RegistroPage() {
 
   const acceptAndSend = async () => {
     if (pending === null) return;
+    const { secondWorkshopId, ...base } = pending;
     setIsSending(true);
     try {
-      const result = await createRegistration({
-        ...pending,
-        workshopId: pending.workshopId as Id<"workshops">,
+      const first = await createRegistration({
+        ...base,
+        workshopId: base.workshopId as Id<"workshops">,
         acceptedPrivacy: true,
         allowsSecondaryUse,
       });
-      setConfirmation(result);
+
+      // El segundo va en su propia mutation: cada inscripción es una fila, y
+      // así la primera queda guardada aunque la segunda falle.
+      const workshopNames = [first.workshopName];
+      if (secondWorkshopId !== undefined && secondWorkshopId !== "") {
+        const extra = await createRegistration({
+          ...base,
+          workshopId: secondWorkshopId as Id<"workshops">,
+          acceptedPrivacy: true,
+          allowsSecondaryUse,
+        });
+        workshopNames.push(extra.workshopName);
+      }
+
+      setConfirmation({ ...first, workshopNames });
       setPending(null);
     } catch (error) {
       // El servidor lanza ConvexError({ code, message }) para poder pintar el
@@ -294,6 +323,65 @@ export default function RegistroPage() {
                 {errors.workshopId?.message === undefined ? null : (
                   <FieldError message={errors.workshopId.message} />
                 )}
+                {selected === undefined ? null : (
+                  <span className="font-code-badge text-code-badge text-on-surface-variant mt-space-2xs uppercase">
+                    {scheduleLabel(selected)}
+                  </span>
+                )}
+              </motion.div>
+
+              {/* 6. SEGUNDO TALLER (OPCIONAL) */}
+              <motion.div
+                className="flex flex-col gap-space-2xs"
+                transition={BLOCK_TRANSITION}
+                variants={BLOCK_VARIANTS}
+              >
+                <div className="flex items-center justify-between">
+                  <label
+                    className="font-label-caps text-label-caps text-on-surface uppercase tracking-wider"
+                    htmlFor="workshop2"
+                    id="workshop2-label"
+                  >
+                    6. SEGUNDO TALLER
+                  </label>
+                  <span className="font-code-badge text-code-badge text-on-surface-variant">
+                    [OPCIONAL]
+                  </span>
+                </div>
+                <Controller
+                  control={control}
+                  name="secondWorkshopId"
+                  render={({ field }) => (
+                    <BrutalistSelect
+                      disabled={isDone || selected === undefined}
+                      id="workshop2"
+                      labelledBy="workshop2-label"
+                      onBlur={field.onBlur}
+                      onChange={field.onChange}
+                      options={[
+                        { label: "> SIN SEGUNDO TALLER", value: "" },
+                        ...compatible.map((workshop) => ({
+                          disabled: workshop.isFull,
+                          label: optionLabel(workshop),
+                          value: workshop._id,
+                        })),
+                      ]}
+                      placeholder={
+                        selected === undefined
+                          ? "> ELIGE PRIMERO UN TALLER"
+                          : "> SIN SEGUNDO TALLER"
+                      }
+                      value={field.value ?? ""}
+                    />
+                  )}
+                />
+                <span className="font-code-badge text-code-badge text-on-surface-variant mt-space-2xs uppercase">
+                  {selected === undefined
+                    ? "ELIGE PRIMERO UN TALLER"
+                    : second === undefined
+                      ? "PUEDES CURSAR HASTA 2 TALLERES SI NO SE EMPALMAN"
+                      : scheduleLabel(second)}
+                </span>
               </motion.div>
 
               {/* SUBMIT BUTTON */}
@@ -520,13 +608,21 @@ type Workshop = NonNullable<
   ReturnType<typeof useQuery<typeof api.workshops.list>>
 >[number];
 
-/** `NOMBRE (N cupos disp.)`, marcando los críticos y los llenos. */
+/** `NOMBRE · DÍA HORA · (N cupos disp.)`, marcando los críticos y los llenos. */
 function optionLabel(workshop: Workshop) {
-  if (workshop.isFull) return `${workshop.name} (CUPO LLENO)`;
+  const schedule = toSchedule(workshop);
+  const when = schedule === null ? "" : ` · ${formatScheduleShort(schedule)}`;
+  if (workshop.isFull) return `${workshop.name}${when} · CUPO LLENO`;
   if (isLow(workshop)) {
-    return `${workshop.name} (${workshop.remaining} cupos disp. - CRÍTICO)`;
+    return `${workshop.name}${when} · ${workshop.remaining} cupos - CRÍTICO`;
   }
-  return `${workshop.name} (${workshop.remaining} cupos disp.)`;
+  return `${workshop.name}${when} · ${workshop.remaining} cupos`;
+}
+
+/** "LUN 21 · 11:30–14:30" bajo el selector, para confirmar lo elegido. */
+function scheduleLabel(workshop: Workshop) {
+  const schedule = toSchedule(workshop);
+  return schedule === null ? "SIN HORARIO ASIGNADO" : formatScheduleShort(schedule);
 }
 
 const isLow = (workshop: Workshop) =>
@@ -631,7 +727,10 @@ function SuccessBanner({ confirmation }: { confirmation: Confirmation }) {
             <strong>ALUMNO:</strong> {confirmation.fullName} (
             {confirmation.accountNumber})
             <br />
-            <strong>TALLER:</strong> {confirmation.workshopName}
+            <strong>
+              {confirmation.workshopNames.length > 1 ? "TALLERES:" : "TALLER:"}
+            </strong>{" "}
+            {confirmation.workshopNames.join(" · ")}
             <br />
             <strong>CORREO:</strong> {confirmation.email}
           </p>

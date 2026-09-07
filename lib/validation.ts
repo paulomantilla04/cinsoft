@@ -31,6 +31,8 @@ export const registrationSchema = z.object({
   workshopId: z
     .string({ error: "Selecciona un taller." })
     .min(1, "Selecciona un taller."),
+  // Segundo taller, opcional. Cadena vacía = no quiere uno.
+  secondWorkshopId: z.string().optional(),
 });
 
 export type RegistrationInput = z.infer<typeof registrationSchema>;
@@ -62,9 +64,16 @@ export const REGISTRATION_ERRORS = {
   DUPLICATE_ACCOUNT: "CUENTA YA INSCRITA",
   DUPLICATE_EMAIL: "CORREO YA INSCRITO",
   WORKSHOP_FULL: "CUPO LLENO",
+  MAX_WORKSHOPS: "LÍMITE DE TALLERES",
+  ALREADY_IN_WORKSHOP: "YA INSCRITO EN ESE TALLER",
+  SCHEDULE_CONFLICT: "HORARIOS EMPALMADOS",
+  IDENTITY_MISMATCH: "DATOS NO COINCIDEN",
   WORKSHOP_NOT_FOUND: "TALLER NO DISPONIBLE",
   VALIDATION: "DATOS INVÁLIDOS",
   PRIVACY_NOT_ACCEPTED: "AVISO NO ACEPTADO",
 } as const;
 
 export type RegistrationErrorCode = keyof typeof REGISTRATION_ERRORS;
+
+/** Talleres a los que puede inscribirse un mismo alumno. */
+export const MAX_WORKSHOPS_PER_STUDENT = 2;

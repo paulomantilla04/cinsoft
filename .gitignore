@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# copias de seguridad de Convex: contienen datos personales de alumnos
+/backups

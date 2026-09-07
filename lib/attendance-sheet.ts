@@ -53,6 +53,8 @@ export type AttendanceSection = {
   rows: AttendanceRow[];
   /** Qué dato lleva la cuarta columna; el otro va en el título. */
   secondary: keyof typeof COLUMNS;
+  /** Fecha y hora del taller, si la sección corresponde a uno. */
+  schedule?: string;
   title: string;
 };
 
@@ -146,6 +148,7 @@ function drawHeading({
   pageCount,
   pageIndex,
   regular,
+  schedule,
   title,
   total,
 }: {
@@ -154,6 +157,7 @@ function drawHeading({
   pageCount: number;
   pageIndex: number;
   regular: Awaited<ReturnType<PDFDocument["embedFont"]>>;
+  schedule?: string;
   title: string;
   total: number;
 }) {
@@ -183,10 +187,10 @@ function drawHeading({
     color: BLACK,
   });
 
-  const summary =
-    pageCount > 1
-      ? `${total} inscritos · página ${pageIndex + 1} de ${pageCount}`
-      : `${total} inscritos`;
+  const parts = [`${total} inscritos`];
+  if (schedule !== undefined) parts.unshift(schedule);
+  if (pageCount > 1) parts.push(`página ${pageIndex + 1} de ${pageCount}`);
+  const summary = parts.join(" · ");
   page.drawText(summary, {
     font: regular,
     size: 9,
